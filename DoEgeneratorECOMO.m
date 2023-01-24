@@ -11,17 +11,21 @@ classdef DoEgeneratorECOMO < handle
     end % constant properties
 
     properties ( Access = protected )
-        Bspline     (:,1)    bSplineTools                                   % Array of bSplineTools objects (one for each distributed parameter)
+        Bspline     (:,4)    table                                          % Table of bSplineTools objects (one row for each distributed parameter)
+        DesignInfo  (:,:)    table                                          % Table of pointers to make it easy to populate the design table
+        Design      (:,:)    double                                         % Design array
+        NumPoints_  (1,1)   double                                          % Number of points in the design
+        NumColDes_  (1,1)   double                                          % Number of colums in the design matrix
     end % protected properties
 
     properties ( SetAccess = protected )
         Factors     (:,:)    table                                          % Factor details and type
         Scramble    (1,1)    logical = false                                % Set to true to apply scramble to design
-        Design      (:,:)    double                                         % Design array
+        TubeLength  (1,1)    double  = 185.00                               % Length of the tube [mm]
+        TubeIntDia  (1,1)    double  = 4.5                                  % Clean inner diameter of tube [mm]
     end % SetAccess protected
 
     properties ( Access = private )
-        NumPoints_  (1,1)   double                                          % Number of points in the design
     end % private properties
 
     properties ( SetAccess = protected, Dependent = true )
@@ -37,6 +41,22 @@ classdef DoEgeneratorECOMO < handle
     end % abstract method signatures
 
     methods
+        function obj = setPipeGeometry( obj, D, L )
+            %--------------------------------------------------------------
+            % Define the pipe geometric properties: the clean internal
+            % diameter and the tube lenghth. Both dimensions are assumed to
+            % be in [mm].
+            %--------------------------------------------------------------
+            arguments
+                obj (1,1)            { mustBeNonempty( obj ) }
+                D   (1,1)   double   { mustBePositive( D ) } = 4.50
+                L   (1,1)   double   { mustBePositive( L ) } = 185.00
+            end
+            obj.TubeLength = L;
+            obj.TubeIntDia = D;
+            obj.clearDesign();
+        end % setPipeGeometry
+
         function obj = clearDesign( obj )
             %--------------------------------------------------------------
             % Set the design array to empty and reset Scramble property to
@@ -54,27 +74,38 @@ classdef DoEgeneratorECOMO < handle
             % already defined, details are overwritten with the new
             % information supplied.
             %
-            % obj.addFactor( S );
+            % obj.addFactor( S, Name, Value );
             %
             % Input Arguments:
             %
-            % S     --> (struct) Multidimensional Structure defining factor 
-            %                    properties with fields:
+            % S      --> (struct) Multidimensional Structure defining factor 
+            %                     properties with fields:
             %
-            %            Name  - (string) Name of factor
-            %            Units - (string) Factor units
-            %            Fixed - (logical) True if fixed factor. False
-            %                    if distributed factor.
-            %            Lo    - (double) Low natural limit for factor
-            %            Hi    - (double) High natural limit for factor
+            %             Name  - (string) Name of factor
+            %             Units - (string) Factor units
+            %             Fixed - (logical) True if fixed factor. False
+            %                     if distributed factor.
+            %             Lo    - (double) Low natural limit for factor
+            %             Hi    - (double) High natural limit for factor
             %
-            % Note each dimension of S must define a different factor
+            % Note each dimension of S must define a different factor.
+            %
+            % Optional Arguments:
+            % 
+            % Name   --> (string), may be either "M" for spline order or
+            %            "K" for number of knots.
+            % Value -->  (double) If a scaler, then all distributed
+            %            parameters will be assigned the same order or 
+            %            number of knots. If a vector, with elements equal 
+            %            to the number of distributed factors, then each 
+            %            distributed factor is assigned a unique order or 
+            %            number of knots respectively.
             %--------------------------------------------------------------
             arguments
                 obj     (1,1)   
                 S       (1,:)   struct   { mustBeNonempty( S ) }
-                Opts.M  (1,1)   int8 = 4
-                Opts.K  (1,1)   int8 = 2
+                Opts.M  (:,1)   int8 = 4
+                Opts.K  (:,1)   int8 = 2
             end
             Q = max( size( S ) );
             %--------------------------------------------------------------
@@ -104,46 +135,115 @@ classdef DoEgeneratorECOMO < handle
                 obj.Factors = T;
             end
             %--------------------------------------------------------------
+            % Duplicate knot or order data if a scalar
+            %--------------------------------------------------------------
+            if isscalar( Opts.M )
+                Opts.M = repmat( Opts.M, obj.NumDist, 1 );
+            end
+            if isscalar( Opts.K )
+                Opts.K = repmat( Opts.K, obj.NumDist, 1 );
+            end            %--------------------------------------------------------------
             % Create B-spline array for distributed factors
             %--------------------------------------------------------------
-            obj = obj.createBsplineArray( Opts.M, Opts.K );
+            obj = obj.createBsplineTable( Opts.M, Opts.K );
+            %--------------------------------------------------------------
+            % Generate the design information linking columns of the design
+            % matrix to factor values
+            %--------------------------------------------------------------
+            obj = obj.genDesignInfo();
         end % addFactor
     end % ordinary methods
 
     methods ( Access = protected )
-        function obj = createBsplineArray( obj, M, K )
+        function obj = genDesignInfo( obj )
+            %--------------------------------------------------------------
+            % Create a table decoding the design table information
+            %
+            % obj = obj.genDesignInfo();
+            %--------------------------------------------------------------
+            N = obj.NumFactors;
+            D = cell( N, 2 );
+            Finish = 0;
+            for Q = 1:N
+                %----------------------------------------------------------
+                % Parse the column information
+                %----------------------------------------------------------
+                if obj.Factors.Fixed( Q )
+                    %------------------------------------------------------
+                    % Parse a fixed factor
+                    %------------------------------------------------------
+                    Finish = Finish + 1;
+                    D( Q,: ) = { Finish, nan };
+                else
+                    %------------------------------------------------------
+                    % Parse the distributed factor
+                    %------------------------------------------------------
+                    [ D( Q,: ), Finish ] = obj.parseDistributed( obj.Factors.Name( Q ) ,...
+                                                         Finish );
+                end
+            end
+            %--------------------------------------------------------------
+            % Update the design info table property with the pointers
+            %--------------------------------------------------------------
+            D = cell2table( D );
+            D.Properties.VariableNames = [ "Coefficients", "Knots" ];
+            D.Properties.RowNames = obj.Factors.Name;
+            obj.DesignInfo = D;
+        end % genDesignInfo
+
+        function obj = createBsplineTable( obj, M, K )
             %--------------------------------------------------------------
             % Create a B-spline representation for each distributed
             % parameter
             %
-            % obj = obj.createBsplineArray( M, K );
+            % obj = obj.createBsplineArray( M, K, Names );
             %
             % Input Arguments:
             %
             % M     --> (int8) Spline order (1 <= M <= 4)
             % K     --> (int8) Number of knots (1 <= K <= 7)
+            %
+            % Note both M and K may be scalers or vectors. If vecctors,
+            % they must be vectors of the same length. This permits the
+            % user to modulate the complexity of the axial distribution
+            % of each distributed parameter as required. If M and K are
+            % both scalars then every distributed parameter is assigned  
+            % order M and number of knots K.
             %--------------------------------------------------------------
             arguments
                 obj (1,1)                   { mustBeNonempty( obj ) }
-                M   (1,1) int8  { mustBeGreaterThan(M,0), ...
+                M   (:,1) int8  { mustBeGreaterThan(M,0), ...
                                   mustBeLessThan(M,5)} = 4;
-                K   (1,1) int8  { mustBeGreaterThan(K,0), ...
+                K   (:,1) int8  { mustBeGreaterThan(K,0), ...
                                   mustBeLessThan(K,8)} = 2;
             end
-            D = ~obj.Factors{ :, "Fixed" };
+            %--------------------------------------------------------------
+            % Fetch names of distributed factors
+            %--------------------------------------------------------------
+            D = ~obj.Factors{ :, "Fixed" };                                 % Point to distributed factors
+            RowNames = obj.Factors.Name( D );                               % Names of distributed factors
             N = sum( D );
+            %--------------------------------------------------------------
+            % Parse the spline data and create the necessary Bspline
+            % objects.
+            %--------------------------------------------------------------
             if ( N > 0 )
-                obj.Bspline( N ) = bSplineTools.empty;
-                Lo = obj.Factors{ :, "Lo" }( D );
-                Hi = obj.Factors{ :, "Hi" }( D );
+                B( N, 1 ) = bSplineTools();
                 for Q = 1:N
-                    DK = linspace( Lo( Q ), Hi( Q ), K + 2 ).';
+                    DK = linspace( 0, obj.TubeLength, K( Q ) + 2 ).';
                     DK = DK( 2:end-1 );
-                    obj.Bspline( Q ) = bSplineTools( ( M - 1 ), DK,...
-                        Lo( Q ), Hi( Q ) );
+                    B( Q ) = bSplineTools( ( M( Q ) - 1 ), DK,...
+                        0, obj.TubeLength );
                 end
+                NumBasis = double( [B.nb].' );
+                NumKnots = double( [B.k].' );
+                NumPar = NumBasis + NumKnots;
+                obj.Bspline = table( B, NumBasis, NumKnots, NumPar );
+                obj.Bspline.Properties.RowNames = RowNames;
+                obj.Bspline.Properties.VariableNames = [ "Object",...
+                                 "NumBasis", "NumKnots", "NumPar"];
             end
-        end % createBsplineArray
+        end % createBsplineTable
 
         function T = parseFactor( obj, S )
             %--------------------------------------------------------------
@@ -193,6 +293,35 @@ classdef DoEgeneratorECOMO < handle
             end
         end % fieldCheck
     end % protected methods
+
+    methods ( Access = private )
+        function [ Out, Finish ] = parseDistributed( obj, Name, Finish )
+            %--------------------------------------------------------------
+            % Output a cell array of dimension {1,2}. First cell contains
+            % the columns for the spline coefficients. The second cell
+            % contains the columns pertaiing to the knots.
+            %
+            % [ Out, Finish ] = obj.parseDistributed( Name, Finish );
+            %
+            % Input Arguments:
+            %
+            % Name   - (string) Name of variable
+            % Finish - (double) Last column pointer value known
+            %
+            % Output Arguments:
+            %
+            % Out    - (cell) array of output columns
+            % Finish - (doulbe) Updated column pointer
+            %--------------------------------------------------------------
+            Str = [ "NumBasis", "NumKnots" ];
+            Out = cell( 1,2 );
+            for Q = 1:2
+                Start = Finish + 1;
+                Finish = Start + obj.Bspline{ Name, Str( Q ) } - 1;
+                Out{ Q } = Start:Finish;
+            end
+        end % parseDistributed
+    end % private methods
 
     methods ( Static = true, Access = protected )
     end % static and protected methods
