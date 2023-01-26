@@ -43,7 +43,7 @@ classdef DoEgeneratorECOMO < handle
         function obj = applyConstraints( obj, P )
             %--------------------------------------------------------------
             % Apply interval constraints to the distributed parameters
-            
+            %
         end % applyConstraints
 
         function Y = evalSpline( obj, X, Name, Coeff, Knots )
@@ -67,6 +67,17 @@ classdef DoEgeneratorECOMO < handle
                 Coeff (:,1)  double  { mustBeNonempty( Coeff ) }
                 Knots (:,1)  double  { mustBeNonempty( Knots ) }
             end
+            %--------------------------------------------------------------
+            % Check name of distributed parameter is valid
+            %--------------------------------------------------------------
+            Ok = contains( Name, obj.Factors.Name );
+            assert( Ok, 'Parameter "%s" not defined', Name );
+            %--------------------------------------------------------------
+            % Check that parameter is of type "distributed"
+            %--------------------------------------------------------------
+            Idx = contains( obj.Factors.Name, Name );
+            Ok = ~obj.Factors{ Idx, "Fixed" };
+            assert( Ok, 'Parameter "%s" cannot be of type "Fixed"', Name );
             %--------------------------------------------------------------
             % Clip axial tube dimension
             %--------------------------------------------------------------
