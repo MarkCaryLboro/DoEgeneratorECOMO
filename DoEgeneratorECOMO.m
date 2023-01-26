@@ -40,10 +40,80 @@ classdef DoEgeneratorECOMO < handle
     end % abstract method signatures
 
     methods
-        function obj = applyConstraints( obj, P )
+        function X = decode( obj, Xc, Name )
             %--------------------------------------------------------------
-            % Apply interval constraints to the distributed parameters
+            % Decode from the interval [0,1] --> [a,b] for a fixed factor
             %
+            % X = obj.decode( Xc, Name );
+            %
+            % Input Arguments:
+            %
+            % Xc    --> (double) Vector of coded data
+            % Name  --> (string) Name of fixed parameter
+            %--------------------------------------------------------------
+            arguments
+                obj     (1,1)        { mustBeNonempty( obj ) }
+                Xc      (:,1) double { mustBeGreaterThanOrEqual( Xc, 0 ),...
+                                       mustBeLessThanOrEqual( Xc, 1 ) }
+                Name    (1,1) string { mustBeNonempty( Name ) }
+            end
+            Idx = contains( obj.Factors.Name, Name );
+            Ok = obj.Factors{ Idx, "Fixed" };
+            assert( Ok, 'Factor "%s" is not a fixed parameter', Name);
+            A = obj.Factors.Lo( Idx );
+            B = obj.Factors.Hi( Idx );
+            X = ( B - A ) .* Xc + A;
+        end % decode
+
+        function Xc = code( obj, X, Name )
+            %--------------------------------------------------------------
+            % Code from the interval [ a, b] --> [ 0, 1 ] for a fixed
+            % factor.
+            % 
+            % Xc = obj.code( X, Name );
+            %
+            % Input Arguments:
+            %
+            % X     --> (double) Vector of uncoded data  
+            % Name  --> (string) Name of fixed parameter
+            %--------------------------------------------------------------
+            arguments
+                obj     (1,1)        { mustBeNonempty( obj ) }
+                X      (:,1) double  { mustBeNonempty( X ) }
+                Name    (1,1) string { mustBeNonempty( Name ) }
+            end
+            Idx = contains( obj.Factors.Name, Name );
+            Ok = obj.Factors{ Idx, "Fixed" };
+            assert( Ok, 'Factor "%s" is not a fixed parameter', Name);
+            A = obj.Factors.Lo( Idx );
+            B = obj.Factors.Hi( Idx );
+            Xc = ( X - A ) ./ ( B - A );
+        end % code
+
+        function obj = applyConstraints( obj, Des )
+            %--------------------------------------------------------------
+            % Apply interval constraints to the distributed parameters.
+            % Spline evaluations outside the supplied range are removed
+            % from the experiment.
+            % 
+            % obj = obj.applyConstraints( Des )
+            %
+            % Input Arguments
+            %
+            % Des --> Current design set
+            %--------------------------------------------------------------
+            arguments
+                obj (1,1)         { mustBeNonempty( obj ) }
+                Des (:,:)  double                           = obj.Design
+            end
+            N = 1:obj.NumFactors;
+            Idx = true( size( Des, 1 ), 1 );
+            for Q = 1:N
+                %----------------------------------------------------------
+                % Evaluate the splines
+                %----------------------------------------------------------
+
+            end
         end % applyConstraints
 
         function Y = evalSpline( obj, X, Name, Coeff, Knots )
