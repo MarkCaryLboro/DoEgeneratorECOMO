@@ -2,7 +2,7 @@ classdef SobolSequence < DoEgeneratorECOMO
 
     
     methods
-        function obj = SobolSequence( Factors )
+        function obj = SobolSequence( Factors, Opts )
             %--------------------------------------------------------------
             % Class constructor
             %
@@ -19,9 +19,29 @@ classdef SobolSequence < DoEgeneratorECOMO
             %                       if distributed factor.
             %               Lo    - (double) Low natural limit for factor
             %               Hi    - (double) High natural limit for factor
+            %
+            % Optional Arguments:
+            % 
+            % Name   --> (string), may be either "M" for spline order or
+            %            "K" for number of knots.
+            % Value -->  (double) If a scaler, then all distributed
+            %            parameters will be assigned the same order or 
+            %            number of knots. If a vector, with elements equal 
+            %            to the number of distributed factors, then each 
+            %            distributed factor is assigned a unique order or 
+            %            number of knots respectively.
+            %
+            % Examples: obj = SobolSequence( Factors, "M", 4, "K", 2 )
+            %           obj = SobolSequence( Factors, "M", [3, 4], "K", 2 )
+            %           obj = SobolSequence( Factors, "K", [2, 3], "M", 4 )
             %--------------------------------------------------------------
+            arguments
+                Factors (1,:) struct
+                Opts.M  (:,1) int8      = 4
+                Opts.K  (:,1) int8      = 2
+            end
             if nargin > 0 && all( obj.fieldCheck( Factors ) )
-                obj = obj.addFactor( Factors );
+                obj = obj.addFactor( Factors, "K", Opts.K, "M", Opts.M );
             end
         end % SobolSequence
     end % Constructor method
@@ -42,28 +62,37 @@ classdef SobolSequence < DoEgeneratorECOMO
             % "
             %--------------------------------------------------------------
             arguments
-                obj         (1,1)   SobolSequence
-                N           (1,1)   int64          { mustBePositive( N ) } = 101;
-                Opts.Leap   (1,1)   double         = max( primes( 7301 ) );
-                Opts.Skip   (1,1)   double         = max( primes( 49 ) );
-                Opts.Con    (1,1)   logical        = false
+                obj           (1,1)   SobolSequence
+                N             (1,1)   int64        { mustBePositive( N ) } = 101;
+                Opts.Leap     (1,1)   double       = max( primes( 7301 ) );
+                Opts.Skip     (1,1)   double       = max( primes( 49 ) );
+                Opts.Con      (1,1)   logical      = false
+                Opts.Scramble (1,1) logical        = false
             end
-            obj.NumPoints_ = N;
             D = sum( obj.Bspline.NumPar ) + double( obj.NumFixed );
             P = sobolset( D, "Leap", Opts.Leap, "Skip", Opts.Skip );
-            Des = net( P, obj.NumPoints );
+            if Opts.Scramble
+                %----------------------------------------------------------
+                % Scramble the design
+                %----------------------------------------------------------
+                P = scramble( P, 'MatousekAffineOwen' );
+            end
+            %--------------------------------------------------------------
             if Opts.Con
                 %----------------------------------------------------------
                 % Identify feasible combinations for the distributed
                 % factors
                 %----------------------------------------------------------
-                Des = obj.applyConstraints( Des );
+                Des = net( P, 10 * N );                                     % Coded on interval [ 0,1 ]
+                obj = obj.applyConstraints( Des );                          % Retain only feasible combinations 
+                obj.NumPoints_ = size( obj.Design, 1 );
+            else
+                obj.NumPoints_ = N;
+                Des = net( P, obj.NumPoints );
+                obj.Design = Des;
             end
-            obj.Design = Des;
         end % generate
-        
-        function obj = scrambleDesign( obj, varargin )
-        end % scrambleDesign
+
     end % concrete abstract method signatures
     
 end % SobolSequence

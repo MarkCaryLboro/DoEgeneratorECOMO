@@ -11,7 +11,6 @@ classdef DoEgeneratorECOMO < handle
     end % constant properties
 
     properties ( Access = protected )
-        Bspline     (:,4)    table                                          % Table of bSplineTools objects (one row for each distributed parameter)
         DesignInfo  (:,:)    table                                          % Table of pointers to make it easy to populate the design table
         Design      (:,:)    double                                         % Design array
         NumPoints_  (1,1)   double                                          % Number of points in the design
@@ -19,6 +18,7 @@ classdef DoEgeneratorECOMO < handle
     end % protected properties
 
     properties ( SetAccess = protected )
+        Bspline     (:,4)    table                                          % Table of bSplineTools objects (one row for each distributed parameter)
         Factors     (:,:)    table                                          % Factor details and type
         Scramble    (1,1)    logical = false                                % Set to true to apply scramble to design
         TubeLength  (1,1)    double  = 185.00                               % Length of the tube [mm]
@@ -37,10 +37,63 @@ classdef DoEgeneratorECOMO < handle
 
     methods ( Abstract = true )
         obj = generate( obj, varargin )
-        obj = scrambleDesign( obj, varargin )
     end % abstract method signatures
 
     methods
+        function obj = applyConstraints( obj, P )
+            %--------------------------------------------------------------
+            % Apply interval constraints to the distributed parameters
+            
+        end % applyConstraints
+
+        function Y = evalSpline( obj, X, Name, Coeff, Knots )
+            %--------------------------------------------------------------
+            % Evaluate the B-spline at the coordinates specified
+            %
+            % Y = obj.evalSpline( Name, Coeff, Knots );
+            %
+            % Input Arguments:
+            %
+            % X     --> (double) Vector of axial dimensions at which to 
+            %                    evaluate the B-spline  
+            % Name  --> (string) Name of distributed parameter
+            % Coeff --> (double) Basis function coefficients
+            % Knots --> (double) Strictly increasing knot sequence
+            %--------------------------------------------------------------
+            arguments
+                obj   (1,1)          { mustBeNonempty( obj ) }
+                X     (:,1)  double  { mustBeNonempty( X ) }
+                Name  (1,1)  string  { mustBeNonempty( Name ) }
+                Coeff (:,1)  double  { mustBeNonempty( Coeff ) }
+                Knots (:,1)  double  { mustBeNonempty( Knots ) }
+            end
+            %--------------------------------------------------------------
+            % Clip axial tube dimension
+            %--------------------------------------------------------------
+            X( X > obj.TubeLength ) = obj.TubeLength;
+            X( X < 0 ) = 0;
+            %--------------------------------------------------------------
+            % Capture the relevant B-spline object
+            %--------------------------------------------------------------
+            B = obj.Bspline{ Name, "Object"};
+            %--------------------------------------------------------------
+            % Check coefficient vector dimensionality is correct & assign
+            %--------------------------------------------------------------
+            Ok = ( numel( Coeff ) == B.nb );
+            assert( Ok, '"%s" spline must have %2.0f coefficients', ...
+                                                            Name, B.nb);
+            B.alpha = Coeff;
+            %--------------------------------------------------------------
+            % Check knot vector dimensionality is correct & assign
+            %--------------------------------------------------------------     
+            Ok = ( numel( Knots ) == B.k );
+            assert( Ok, '"%s" spline must have %2.0f knots', Name, B.k);
+            B.n = Knots;
+            %--------------------------------------------------------------
+            % Calculate the response variables 
+            Y = B.eval( X );
+        end % evalSpline
+
         function obj = setPipeGeometry( obj, D, L )
             %--------------------------------------------------------------
             % Define the pipe geometric properties: the clean internal
