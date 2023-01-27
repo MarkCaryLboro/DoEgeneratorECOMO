@@ -84,7 +84,7 @@ classdef SobolSequence < DoEgeneratorECOMO
                 % factors
                 %----------------------------------------------------------
                 Des = net( P, 10 * N );                                     % Coded on interval [ 0,1 ]
-                obj = obj.applyConstraints( Des );                          % Retain only feasible combinations 
+                obj = obj.applyConstraints( N, Des );                       % Retain only feasible combinations 
                 obj.NumPoints_ = size( obj.Design, 1 );
             else
                 obj.NumPoints_ = N;

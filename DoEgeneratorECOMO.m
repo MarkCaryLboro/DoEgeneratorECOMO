@@ -90,7 +90,7 @@ classdef DoEgeneratorECOMO < handle
             Xc = ( X - A ) ./ ( B - A );
         end % code
 
-        function obj = applyConstraints( obj, Des )
+        function obj = applyConstraints( obj, Sz, Des )
             %--------------------------------------------------------------
             % Apply interval constraints to the distributed parameters.
             % Spline evaluations outside the supplied range are removed
@@ -101,22 +101,60 @@ classdef DoEgeneratorECOMO < handle
             % Input Arguments
             %
             % Des --> Current design set
+            % Sz  --> Desired size of design
             %--------------------------------------------------------------
             arguments
                 obj (1,1)         { mustBeNonempty( obj ) }
+                Sz  (1,1)  double
                 Des (:,:)  double                           = obj.Design
             end
             N = 1:obj.NumFactors;
-            Idx = true( size( Des, 1 ), 1 );
-            for Q = 1:N
+            X = linspace( 0, obj.TubeLength, 1001 );                        % Define axial dimension
+            Idx = true( size( Des, 1 ), obj.NumFactors );
+            for Q = N
                 %----------------------------------------------------------
                 % Evaluate the splines
+                %
+                % 1. Extract coefficients and decode
+                % 2. Extract knots and decode
+                % 3. Evaluate spline
                 %----------------------------------------------------------
-
+                if ~obj.Factors{ Q, "Fixed" }
+                    %------------------------------------------------------
+                    % Distributed factor
+                    %------------------------------------------------------
+                    Name = obj.Factors{ Q, "Name" };
+                    Kidx = obj.DesignInfo{ Q, "Knots" }{:};
+                    B = obj.Bspline{ Name, "Object" };
+                    K = B.decode( Des( :,Kidx ) );
+                    Cidx = obj.DesignInfo{ Q, "Coefficients" }{:};
+                    C = obj.decodeSplineCoeff( Name, Des( :, Cidx ) );
+                    Lo = obj.Factors.Lo( Q );
+                    Hi = obj.Factors.Hi( Q );
+                    Ok = false( size( Des, 1 ), 1 );
+                    for R = 1:size( C, 1 )
+                        %--------------------------------------------------
+                        % Evaluate the spline
+                        %--------------------------------------------------
+                        Y = obj.evalSpline( X, Name, C( R,: ), K( R,: ) );
+                        Ok( R ) = all( ( Y >= Lo ) & ( Y <= Hi ) );
+                    end
+                    Idx( :, Q ) = Ok;
+                end
             end
+            %--------------------------------------------------------------
+            % Now select the valid design points
+            %--------------------------------------------------------------
+            Idx = all( Idx, 2 );
+            Des = Des( Idx,: );
+            NumFeasible = sum( Idx );
+            if ( NumFeasible > Sz )
+                Des = Des( 1:Sz,: );
+            end
+            obj.Design = Des;
         end % applyConstraints
 
-        function Y = evalSpline( obj, X, Name, Coeff, Knots )
+        function Y = evalSpline( obj, X, Name, Coeff, Knot )
             %--------------------------------------------------------------
             % Evaluate the B-spline at the coordinates specified
             %
@@ -128,14 +166,13 @@ classdef DoEgeneratorECOMO < handle
             %                    evaluate the B-spline  
             % Name  --> (string) Name of distributed parameter
             % Coeff --> (double) Basis function coefficients
-            % Knots --> (double) Strictly increasing knot sequence
             %--------------------------------------------------------------
             arguments
                 obj   (1,1)          { mustBeNonempty( obj ) }
                 X     (:,1)  double  { mustBeNonempty( X ) }
                 Name  (1,1)  string  { mustBeNonempty( Name ) }
                 Coeff (:,1)  double  { mustBeNonempty( Coeff ) }
-                Knots (:,1)  double  { mustBeNonempty( Knots ) }
+                Knot  (:,1)  double  { mustBeNonempty( Knot ) }
             end
             %--------------------------------------------------------------
             % Check name of distributed parameter is valid
@@ -166,12 +203,14 @@ classdef DoEgeneratorECOMO < handle
             B.alpha = Coeff;
             %--------------------------------------------------------------
             % Check knot vector dimensionality is correct & assign
-            %--------------------------------------------------------------     
-            Ok = ( numel( Knots ) == B.k );
-            assert( Ok, '"%s" spline must have %2.0f knots', Name, B.k);
-            B.n = Knots;
+            %--------------------------------------------------------------
+            Ok = ( numel( Knot ) == B.k );
+            assert( Ok, '"%s" spline must have %2.0f knots', ...
+                                                            Name, B.k);
+            B.n = Knot;
             %--------------------------------------------------------------
             % Calculate the response variables 
+            %--------------------------------------------------------------
             Y = B.eval( X );
         end % evalSpline
 
@@ -429,6 +468,24 @@ classdef DoEgeneratorECOMO < handle
     end % protected methods
 
     methods ( Access = private )
+        function Coeff = decodeSplineCoeff( obj, Name, Coeffc )
+            %--------------------------------------------------------------
+            % Decode the spline coefficients for the cited distributed
+            % parameter
+            %
+            % Coeff = decodeSplineCoeff( obj, Name, Coeffc )
+            %
+            % Input Arguments:
+            %
+            % Name   --> (string) Name of spline factor
+            % Coeffc --> (double) Coded coefficients [0,1]
+            %--------------------------------------------------------------
+            Idx = contains( obj.Factors.Name, Name );
+            A = obj.Factors{ Idx, "Lo" };
+            B = obj.Factors{ Idx, "Hi" };
+            Coeff =  ( B - A ) .* Coeffc +  A;
+        end % decodeSplineCoeff
+
         function [ Out, Finish ] = parseDistributed( obj, Name, Finish )
             %--------------------------------------------------------------
             % Output a cell array of dimension {1,2}. First cell contains
@@ -454,6 +511,9 @@ classdef DoEgeneratorECOMO < handle
                 Finish = Start + obj.Bspline{ Name, Str( Q ) } - 1;
                 Out{ Q } = Start:Finish;
             end
+%               Start = Finish + 1;
+%               Finish = Start + obj.Bspline{ Name, "NumBasis" } - 1;
+%               Out = Start:Finish;
         end % parseDistributed
     end % private methods
 
