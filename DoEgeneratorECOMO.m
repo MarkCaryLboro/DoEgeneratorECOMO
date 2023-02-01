@@ -90,6 +90,23 @@ classdef DoEgeneratorECOMO < handle
             Xc = ( X - A ) ./ ( B - A );
         end % code
 
+        function export( obj )
+            %--------------------------------------------------------------
+            % Export the design to the ECOMO model configuration class
+            %
+            % obj = export();
+            %
+            % Input Arguments:
+            %
+            % Dims --> (int64) vector of distributed parameter lookup table
+            %          dimensions
+            %--------------------------------------------------------------
+            arguments
+                obj  (1,1)          { mustBeNonempty( obj ) }
+            end
+            notify( obj, 'DESIGN_AVAILABLE' );
+        end % export
+
         function obj = applyConstraints( obj, Sz, Des )
             %--------------------------------------------------------------
             % Apply interval constraints to the distributed parameters.
@@ -325,6 +342,23 @@ classdef DoEgeneratorECOMO < handle
             %--------------------------------------------------------------
             obj = obj.genDesignInfo();
         end % addFactor
+
+        function obj = setSize4Export( obj, Sz )
+            %--------------------------------------------------------------
+            % Set the size of the corresponding lookup tables in the ECOMO
+            % model for the distributed parameters.
+            %
+            % obj = obj.setSize4Export( Sz );
+            %
+            % Input Arguments:
+            %
+            % Sz    --> (struct) A multidimensional structure, with
+            %           fieldnames corresponding to the name of each 
+            %           distributed parameter. The content of each field is
+            %           the size of the associated lookup table in the
+            %           ECOMO code.
+            %--------------------------------------------------------------
+        end % setSize4Export
     end % ordinary methods
 
     methods ( Access = protected )
@@ -514,7 +548,11 @@ classdef DoEgeneratorECOMO < handle
 %               Start = Finish + 1;
 %               Finish = Start + obj.Bspline{ Name, "NumBasis" } - 1;
 %               Out = Start:Finish;
-        end % parseDistributed
+
+        function Sz = genSzStructure( obj )
+            %--------------------------------------------------------------
+            %--------------------------------------------------------------
+        end % genSzStructure
     end % private methods
 
     methods ( Static = true, Access = protected )

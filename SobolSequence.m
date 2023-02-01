@@ -1,5 +1,9 @@
 classdef SobolSequence < DoEgeneratorECOMO
-
+    %----------------------------------------------------------------------
+    % A class to generate an experimental design, using a sobol sequence
+    % for the ECOMO model identification approach using Bayesian 
+    % Optimisation.
+    %----------------------------------------------------------------------
     
     methods
         function obj = SobolSequence( Factors, Opts )
@@ -83,7 +87,7 @@ classdef SobolSequence < DoEgeneratorECOMO
                 % Identify feasible combinations for the distributed
                 % factors
                 %----------------------------------------------------------
-                Des = net( P, 10 * N );                                     % Coded on interval [ 0,1 ]
+                Des = net( P, 5 * N );                                      % Coded on interval [ 0,1 ]
                 obj = obj.applyConstraints( N, Des );                       % Retain only feasible combinations 
                 obj.NumPoints_ = size( obj.Design, 1 );
             else
