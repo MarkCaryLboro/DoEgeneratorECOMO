@@ -32,14 +32,13 @@ classdef DoEhook < handle
     end % Constructor method
 
     methods
-        function eventCb( obj, Src, E, Sz )
+        function eventCb( obj, Src, E )
             arguments
                 obj   (1,1) DoEhook { mustBeNonempty( obj )} 
                 Src   (1,1)         { mustBeNonempty( Src ) }
                 E     (1,1)         { mustBeNonempty( E ) }
-                Sz    (1,1) struct  { mustBeNonempty( Sz ) }        
             end
-
+            Src.Factors
         end % eventCB
     end % ordinary methods
 end % DoEhook

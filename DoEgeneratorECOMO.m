@@ -7,17 +7,17 @@ classdef DoEgeneratorECOMO < handle
     end % events
 
     properties ( Constant = true, Access = protected)
-        Expected    string = [ "Name", "Units", "Fixed", "Lo", "Hi" ];
+        Expected    string = [ "Name", "Units", "Fixed", "Lo", "Hi", "Sz" ];
     end % constant properties
 
     properties ( Access = protected )
-        DesignInfo  (:,:)    table                                          % Table of pointers to make it easy to populate the design table
         Design      (:,:)    double                                         % Design array
         NumPoints_  (1,1)   double                                          % Number of points in the design
         NumColDes_  (1,1)   double                                          % Number of colums in the design matrix
     end % protected properties
 
     properties ( SetAccess = protected )
+        DesignInfo  (:,:)    table                                          % Table of pointers to make it easy to populate the design table
         Bspline     (:,4)    table                                          % Table of bSplineTools objects (one row for each distributed parameter)
         Factors     (:,:)    table                                          % Factor details and type
         Scramble    (1,1)    logical = false                                % Set to true to apply scramble to design
@@ -34,6 +34,10 @@ classdef DoEgeneratorECOMO < handle
         NumFixed            int64                                           % Number of fixed factors
         NumDist             int64                                           % Number of B-spline factors
     end % Accessible dependent properties
+
+    properties ( Access = private, Dependent = true )
+        DistIdx             logical
+    end % private dependent properties
 
     methods ( Abstract = true )
         obj = generate( obj, varargin )
@@ -98,7 +102,7 @@ classdef DoEgeneratorECOMO < handle
             %
             % Input Arguments:
             %
-            % Dims --> (int64) vector of distributed parameter lookup table
+            % Dims --> (table) of distributed parameter lookup table
             %          dimensions
             %--------------------------------------------------------------
             arguments
@@ -277,6 +281,9 @@ classdef DoEgeneratorECOMO < handle
             %                     if distributed factor.
             %             Lo    - (double) Low natural limit for factor
             %             Hi    - (double) High natural limit for factor
+            %             Sz    - (int64) Size of corresponding lookup
+            %                     table (only for distributed parameters).
+            %                     Set to 1 if the factor is fixed.
             %
             % Note each dimension of S must define a different factor.
             %
@@ -304,6 +311,9 @@ classdef DoEgeneratorECOMO < handle
             Name = [ S.Name ];
             Ok = ( numel( unique( Name ) ) == Q );
             assert( Ok, "Factor names may not be repeated!");
+            for N = 1:Q
+                S( N ).Name = replace( S( N ).Name, " ", "" );              % Deblank channel names
+            end
             %--------------------------------------------------------------
             % Clear the design
             %--------------------------------------------------------------
@@ -332,7 +342,8 @@ classdef DoEgeneratorECOMO < handle
             end
             if isscalar( Opts.K )
                 Opts.K = repmat( Opts.K, obj.NumDist, 1 );
-            end            %--------------------------------------------------------------
+            end            
+            %--------------------------------------------------------------
             % Create B-spline array for distributed factors
             %--------------------------------------------------------------
             obj = obj.createBsplineTable( Opts.M, Opts.K );
@@ -342,23 +353,6 @@ classdef DoEgeneratorECOMO < handle
             %--------------------------------------------------------------
             obj = obj.genDesignInfo();
         end % addFactor
-
-        function obj = setSize4Export( obj, Sz )
-            %--------------------------------------------------------------
-            % Set the size of the corresponding lookup tables in the ECOMO
-            % model for the distributed parameters.
-            %
-            % obj = obj.setSize4Export( Sz );
-            %
-            % Input Arguments:
-            %
-            % Sz    --> (struct) A multidimensional structure, with
-            %           fieldnames corresponding to the name of each 
-            %           distributed parameter. The content of each field is
-            %           the size of the associated lookup table in the
-            %           ECOMO code.
-            %--------------------------------------------------------------
-        end % setSize4Export
     end % ordinary methods
 
     methods ( Access = protected )
@@ -548,11 +542,7 @@ classdef DoEgeneratorECOMO < handle
 %               Start = Finish + 1;
 %               Finish = Start + obj.Bspline{ Name, "NumBasis" } - 1;
 %               Out = Start:Finish;
-
-        function Sz = genSzStructure( obj )
-            %--------------------------------------------------------------
-            %--------------------------------------------------------------
-        end % genSzStructure
+        end % parseDistributed
     end % private methods
 
     methods ( Static = true, Access = protected )
@@ -573,6 +563,10 @@ classdef DoEgeneratorECOMO < handle
 
         function N = get.NumDist( obj )
             N = sum( ~obj.Factors{ :, "Fixed" } );                          % Number of B-spline factors
+        end
+
+        function Idx = get.DistIdx( obj )
+            Idx = ~obj.Factors{ :, "Fixed" };                               % Point to the distributed parameters
         end
     end % set/get methods
 
