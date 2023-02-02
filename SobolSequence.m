@@ -46,6 +46,8 @@ classdef SobolSequence < DoEgeneratorECOMO
             end
             if nargin > 0 && all( obj.fieldCheck( Factors ) )
                 obj = obj.addFactor( Factors, "K", Opts.K, "M", Opts.M );
+            else
+                warning( "Missing fields in input structure" );
             end
         end % SobolSequence
     end % Constructor method
@@ -73,6 +75,7 @@ classdef SobolSequence < DoEgeneratorECOMO
                 Opts.Con      (1,1)   logical      = false
                 Opts.Scramble (1,1) logical        = false
             end
+            obj = obj.clearDesign();
             D = sum( obj.Bspline.NumPar ) + double( obj.NumFixed );
             P = sobolset( D, "Leap", Opts.Leap, "Skip", Opts.Skip );
             if Opts.Scramble
@@ -80,6 +83,7 @@ classdef SobolSequence < DoEgeneratorECOMO
                 % Scramble the design
                 %----------------------------------------------------------
                 P = scramble( P, 'MatousekAffineOwen' );
+                obj.Scramble = true;
             end
             %--------------------------------------------------------------
             if Opts.Con
@@ -93,10 +97,13 @@ classdef SobolSequence < DoEgeneratorECOMO
             else
                 obj.NumPoints_ = N;
                 Des = net( P, obj.NumPoints );
-                obj.Design = Des;
             end
+            %--------------------------------------------------------------
+            % Decode the design
+            %--------------------------------------------------------------
+            Des = obj.decodeDesign( Des );
+            obj.Design = Des;
+            obj.ExportReady = true;
         end % generate
-
     end % concrete abstract method signatures
-    
 end % SobolSequence

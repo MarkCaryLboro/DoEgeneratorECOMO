@@ -11,12 +11,12 @@ classdef DoEgeneratorECOMO < handle
     end % constant properties
 
     properties ( Access = protected )
-        Design      (:,:)    double                                         % Design array
-        NumPoints_  (1,1)   double                                          % Number of points in the design
-        NumColDes_  (1,1)   double                                          % Number of colums in the design matrix
+        NumPoints_  (1,1)    double                                         % Number of points in the design
+        NumColDes_  (1,1)    double                                         % Number of colums in the design matrix
     end % protected properties
 
     properties ( SetAccess = protected )
+        Design      (:,:)    double                                         % Design array
         DesignInfo  (:,:)    table                                          % Table of pointers to make it easy to populate the design table
         Bspline     (:,4)    table                                          % Table of bSplineTools objects (one row for each distributed parameter)
         Factors     (:,:)    table                                          % Factor details and type
@@ -25,7 +25,8 @@ classdef DoEgeneratorECOMO < handle
         TubeIntDia  (1,1)    double  = 4.5                                  % Clean inner diameter of tube [mm]
     end % SetAccess protected
 
-    properties ( Access = private )
+    properties ( SetAccess = protected )
+        ExportReady (1,1)    logical = false                                % Set to true if experimental design is ready for export.
     end % private properties
 
     properties ( SetAccess = protected, Dependent = true )
@@ -33,10 +34,10 @@ classdef DoEgeneratorECOMO < handle
         NumFactors          int64                                           % Number of factors
         NumFixed            int64                                           % Number of fixed factors
         NumDist             int64                                           % Number of B-spline factors
+        DistIdx             logical                                         % Logical index to distributed parameters
     end % Accessible dependent properties
 
     properties ( Access = private, Dependent = true )
-        DistIdx             logical
     end % private dependent properties
 
     methods ( Abstract = true )
@@ -44,6 +45,16 @@ classdef DoEgeneratorECOMO < handle
     end % abstract method signatures
 
     methods
+        function obj = updateListener( obj, BoptObj )
+            %--------------------------------------------------------------
+            % Create a listerner for the UPDATE event
+            %
+            % Input Arguments:
+            %
+            % BoptObj --> A bayesOpt object
+            %--------------------------------------------------------------
+        end % BoptObj
+
         function X = decode( obj, Xc, Name )
             %--------------------------------------------------------------
             % Decode from the interval [0,1] --> [a,b] for a fixed factor
@@ -108,7 +119,11 @@ classdef DoEgeneratorECOMO < handle
             arguments
                 obj  (1,1)          { mustBeNonempty( obj ) }
             end
-            notify( obj, 'DESIGN_AVAILABLE' );
+            if obj.ExportReady
+                notify( obj, 'DESIGN_AVAILABLE' );
+            else
+                warning( 'Design not generated!' );
+            end
         end % export
 
         function obj = applyConstraints( obj, Sz, Des )
@@ -353,6 +368,54 @@ classdef DoEgeneratorECOMO < handle
             %--------------------------------------------------------------
             obj = obj.genDesignInfo();
         end % addFactor
+
+        function Out = decodeDesign( obj, Des )
+            %--------------------------------------------------------------
+            % Decode the design and return the result in engineering units
+            %
+            % Des = obj.decodeDesign( Des );
+            %
+            % Input Arguments:
+            %
+            % Des --> (double) Coded design on the interval [0,1]
+            %--------------------------------------------------------------
+            Out = zeros( size( Des ) );
+            for Q = 1:obj.NumFactors
+                Name = obj.Factors.Name( Q );
+                %----------------------------------------------------------
+                % Decode the columns by factor
+                %----------------------------------------------------------
+                Col = obj.DesignInfo{ Name, "Coefficients" };
+                if iscell( Col )
+                    Col = Col{ : };
+                end
+                if obj.DistIdx( Q )
+                    %------------------------------------------------------
+                    % Distributed factor. Process coefficients and then
+                    % knots
+                    %------------------------------------------------------
+                    Coeffc = Des( :, Col );
+                    Coeff = obj.decodeSplineCoeff( Name, Coeffc );
+                    Out( :, Col ) = Coeff;
+                    %------------------------------------------------------
+                    % Now decode the knots
+                    %------------------------------------------------------
+                    Col = obj.DesignInfo{ Name, "Knots" };
+                    if iscell( Col )
+                        Col = Col{ : };
+                    end
+                    Kc = Des( :, Col );
+                    B = obj.Bspline{ Name, "Object" };
+                    K = B.decode( Kc );
+                    Out( :, Col ) = K;
+                else
+                    %------------------------------------------------------
+                    % Fixed factor
+                    %------------------------------------------------------
+                    Out( :, Col ) = obj.decode( Des( :, Col ), Name );
+                end
+            end % Q
+        end % decodeDesign
     end % ordinary methods
 
     methods ( Access = protected )
@@ -496,7 +559,7 @@ classdef DoEgeneratorECOMO < handle
     end % protected methods
 
     methods ( Access = private )
-        function Coeff = decodeSplineCoeff( obj, Name, Coeffc )
+        function [ Coeff ] = decodeSplineCoeff( obj, Name, Coeffc )
             %--------------------------------------------------------------
             % Decode the spline coefficients for the cited distributed
             % parameter
