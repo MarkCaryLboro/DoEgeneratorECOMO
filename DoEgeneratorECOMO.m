@@ -13,6 +13,7 @@ classdef DoEgeneratorECOMO < handle
     properties ( Access = protected )
         NumPoints_  (1,1)    double                                         % Number of points in the design
         NumColDes_  (1,1)    double                                         % Number of colums in the design matrix
+        BOptLh      (1,1)                                                   % UPDATE event listener handle
     end % protected properties
 
     properties ( SetAccess = protected )
@@ -53,6 +54,12 @@ classdef DoEgeneratorECOMO < handle
             %
             % BoptObj --> A bayesOpt object
             %--------------------------------------------------------------
+            arguments
+                obj     (1,1)           { mustBeNonempty( obj )}
+                BoptObj (1,1) bayesOpt  { mustBeNonempty( BoptObj )}
+            end
+            obj.BOptLh = addlistener( BoptObj, "UPDATE",...
+                        @( SrcObj, Evnt )obj.updateCb( SrcObj, Evnt ) );
         end % BoptObj
 
         function X = decode( obj, Xc, Name )
@@ -417,6 +424,26 @@ classdef DoEgeneratorECOMO < handle
             end % Q
         end % decodeDesign
     end % ordinary methods
+
+    methods ( Hidden = true )
+        function updateCb( obj, Src, E )
+            %--------------------------------------------------------------
+            % UPDATE event callback
+            %
+            % Generate a table of model parameters for the next point to 
+            % run for the Bayesian Optimisation algorithm
+            %--------------------------------------------------------------
+            arguments
+                obj   (1,1)                 { mustBeNonempty( obj )}        % DoEhook object
+                Src   (1,1) bayesOpt        { mustBeNonempty( Src ) }       % bayesOpt object
+                E     (1,1)                 { mustBeNonempty( E ) }         % EventData object 
+            end
+            %--------------------------------------------------------------
+            % Update the design with the latest requested query location
+            %--------------------------------------------------------------
+            
+        end % updateCb
+    end % Ordinary hidden methods
 
     methods ( Access = protected )
         function obj = genDesignInfo( obj )

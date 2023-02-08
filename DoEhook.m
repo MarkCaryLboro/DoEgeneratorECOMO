@@ -7,26 +7,21 @@ classdef DoEhook < handle
     %----------------------------------------------------------------------
 
     properties ( SetAccess = protected)
-        Lh          (1,1)                                                   % Listener handle
+        Lh          (1,1)                                                   % Listener handle for DESIGN_AVAILABLE event
+        Uh          (1,1)                                                   % Listener handle for UPDATE event
         ConfigFile  (1,1) string                                            % ECOMO model configuration file
         ParTable    (:,:) table                                             % Parameter table in engineering units
     end % Protected properties
 
     methods
-        function obj = DoEhook( Src )
+        function obj = DoEhook()
             %--------------------------------------------------------------
             % Define the DoEhook to listen for and process the 
-            % DESIGN_AVAILABLE event
+            % DESIGN_AVAILABLE and UPDATE events
             %
-            % obj = DoEhook( Src );
-            %
-            % Input Arguments:
-            %
-            % Src --> Event source object.
+            % obj = DoEhook();
             %--------------------------------------------------------------
-            arguments
-                Src (1,1) SobolSequence { mustBeNonempty( Src ) }
-            end
+
             %--------------------------------------------------------------
             % Capture the configuration file for the ECOMO model
             %--------------------------------------------------------------
@@ -37,15 +32,76 @@ classdef DoEhook < handle
                 Ok = flase;
             end
             assert( Ok, "Must select ECOMO model configuration file" );
+        end % DoEhook
+    end % Constructor method
+
+    methods
+        function obj = addDesignAvailableListener( obj, Src )
+            %--------------------------------------------------------------
+            % Add a listener for the DESIGN_AVAILABLE event broadcast by a
+            % SobolSequence object.
+            %
+            % obj = obj.addUpdateListener( Src )
+            %
+            % Input Arguments:
+            %
+            % Src --> SobolSequence object
+            %--------------------------------------------------------------
+            arguments
+                obj (1,1) DoEhook       
+                Src (1,1) SobolSequence { mustBeNonempty( Src ) }
+            end
             %--------------------------------------------------------------
             % Define the listener
             %--------------------------------------------------------------
             obj.Lh = addlistener( Src, "DESIGN_AVAILABLE",...
                         @( SrcObj, Evnt )obj.eventCb( SrcObj, Evnt ) );
-        end % DoEhook
-    end % Constructor method
+        end % addDesignAvailableListener
 
-    methods
+        function obj = addUpdateListener( obj, BoptObj )
+            %--------------------------------------------------------------
+            % Add a listener for the UPDATE event broadcast by a bayesOpt
+            % object
+            %
+            % obj = obj.addUpdateListener( BoptObj )
+            %
+            % Input Arguments:
+            %
+            % BoptObj --> bayesOpt object
+            %--------------------------------------------------------------
+            arguments
+                obj     (1,1)   DoEhook 
+                BoptObj (1,1)   bayesOpt  { mustBeNonempty( BoptObj ) }
+            end
+            %--------------------------------------------------------------
+            % Define the listener
+            %--------------------------------------------------------------
+            obj.Uh = addlistener( BoptObj, "UPDATE",...
+                      @( SrcObj, Evnt )obj.eventCbUpdate( SrcObj, Evnt ) );
+        end % addUpdateListener
+
+        function obj = eventCbUpdate( obj, Src, E )
+            %--------------------------------------------------------------
+            % UPDATE event listener
+            %
+            % This function creates a table listing the parameters in the
+            % experiment. Distributed parameters are converted to lookup
+            % tables.
+            %--------------------------------------------------------------     
+            arguments
+                obj   (1,1) DoEhook { mustBeNonempty( obj )}                % DoEhook object
+                Src   (1,1)         { mustBeNonempty( Src ) }               % SobolSequence object
+                E     (1,1)         { mustBeNonempty( E ) }                 % EventData object 
+            end
+            %--------------------------------------------------------------
+            % Event check
+            %--------------------------------------------------------------
+            Ename = string( E.EventName );
+            Ok = contains( "UPDATE", Ename );
+            assert( Ok, 'Not processing the %s event supplied', Ename );
+            obj = obj.createParTableUpdate( Src );
+        end % eventCbUpdate
+
         function obj = eventCb( obj, Src, E )
             %--------------------------------------------------------------
             % DESIGN_AVAILABLE event listener
@@ -64,7 +120,7 @@ classdef DoEhook < handle
             %--------------------------------------------------------------
             Ename = string( E.EventName );
             Ok = contains( "DESIGN_AVAILABLE", Ename );
-            assert( Ok, 'Not processing the %s supplied', Ename );
+            assert( Ok, 'Not processing the %s event supplied', Ename );
             obj = obj.createParTable( Src );
         end % eventCB
     end % ordinary methods
