@@ -140,6 +140,27 @@ classdef DoEhook < handle
             assert( Ok, 'Not processing the %s event supplied', Ename );
             obj = obj.createParTable( Src );
         end % eventCB
+
+        function obj = setSimulated( obj, N, State)
+            %--------------------------------------------------------------
+            % Set the Nth row of the "Simulated" column in the ParTable
+            % property to the desired State
+            %
+            % obj = obj.setSimulated( N, State );
+            %
+            % Input Arguments:
+            %
+            % N         --> (int64) Row number(s) to set
+            % State     --> (logical) State to set {false}
+            %--------------------------------------------------------------
+            arguments
+                obj
+                N     (1,:)  int64      { mustBeNonempty( N ) }
+                State (1,:)  logical    = false
+            end
+            N = double( N );
+            obj.ParTable.Simulated( N ) = State;
+        end % setSimulated
     end % ordinary methods
 
     methods ( Access = protected )
