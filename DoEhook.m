@@ -16,6 +16,13 @@ classdef DoEhook < handle
         Uh          (1,1)                                                   % Listener handle for UPDATE event
         ConfigFile  (1,1) string                                            % ECOMO model configuration file
         ParTable    (:,:) table                                             % Parameter table in engineering units
+        TubeLength  (1,1) double                                            % Length of the tube [mm]
+        TubeIntDia  (1,1) double                                            % Clean inner diameter of tube [mm]
+        NumPoints   (1,1) int64                                             % Number of points in the design
+        NumFactors  (1,1) int64                                             % Number of factors
+        NumFixed    (1,1) int64                                             % Number of fixed factors
+        NumDist     (1,1) int64                                             % Number of B-spline factors
+        DistIdx     (1,:) logical                                           % Logical index to distributed parameters
     end % Protected properties
 
     methods
@@ -138,6 +145,22 @@ classdef DoEhook < handle
             Ename = string( E.EventName );
             Ok = contains( "DESIGN_AVAILABLE", Ename );
             assert( Ok, 'Not processing the %s event supplied', Ename );
+            %--------------------------------------------------------------
+            % Set geometric parameters
+            %--------------------------------------------------------------
+            obj.TubeIntDia = Src.TubeIntDia / 1000;                         % convert to [m]
+            obj.TubeLength = Src.TubeLength / 1000;                         % Convert to [m]
+            %--------------------------------------------------------------
+            % Set DoE Parameters
+            %--------------------------------------------------------------
+            obj.NumPoints = Src.NumPoints;                                  % Number of points in the design
+            obj.NumFactors = Src.NumFactors;                                % Number of factors
+            obj.NumFixed = Src.NumFixed;                                    % Number of fixed factors
+            obj.NumDist = Src.NumDist;                                      % Number of B-spline factors
+            obj.DistIdx = Src.DistIdx;                                      % Logical index to distributed parameters
+            %--------------------------------------------------------------
+            % Create the table of physical parameter values
+            %--------------------------------------------------------------
             obj = obj.createParTable( Src );
         end % eventCB
 
@@ -267,6 +290,7 @@ classdef DoEhook < handle
             %--------------------------------------------------------------
             Y = Src.evalSpline( LookUp( 1,: ), Name, Coeff, Knot );
             LookUp( 2,: ) = reshape( Y, 1, numel( Y ) );
+            LookUp( 1,: ) = 0.001 * LookUp( 1,: );                          % Convert to [m] for simulation
         end
     end % private methods
 end % DoEhook
