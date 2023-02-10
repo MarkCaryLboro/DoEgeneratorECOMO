@@ -91,7 +91,7 @@ classdef SobolSequence < DoEgeneratorECOMO
                 % Identify feasible combinations for the distributed
                 % factors
                 %----------------------------------------------------------
-                Des = net( P, 5 * N );                                      % Coded on interval [ 0,1 ]
+                Des = net( P, N );                                          % Coded on interval [ 0,1 ]
                 obj = obj.applyConstraints( N, Des );                       % Retain only feasible combinations 
                 obj.NumPoints_ = size( obj.Design, 1 );
             else
