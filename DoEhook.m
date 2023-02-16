@@ -8,7 +8,6 @@ classdef DoEhook < handle
     
     events
         RUN_EXPERIMENT                                                      % Run the full experiment
-        RUN_AUGMENTATION                                                    % Run the augmentation from the bayesOpt
     end
 
     properties ( SetAccess = protected)
@@ -23,6 +22,7 @@ classdef DoEhook < handle
         NumFixed    (1,1) int64                                             % Number of fixed factors
         NumDist     (1,1) int64                                             % Number of B-spline factors
         DistIdx     (1,:) logical                                           % Logical index to distributed parameters
+        Design      (:,:) double                                            % Durrent experimental design in engineering units
     end % Protected properties
 
     methods
@@ -41,9 +41,9 @@ classdef DoEhook < handle
             obj.ConfigFile = fullfile( Path, File );
             Ok = true;
             if ( File == 0 )
-                Ok = flase;
+                Ok = false;
             end
-            assert( Ok, "Must select ECOMO model configuration file" );
+            assert( Ok, "Must select ECOMO model configuration file!" );
         end % DoEhook
     end % Constructor method
 
@@ -68,6 +68,7 @@ classdef DoEhook < handle
             %--------------------------------------------------------------
             obj.Lh = addlistener( Src, "DESIGN_AVAILABLE",...
                         @( SrcObj, Evnt )obj.eventCb( SrcObj, Evnt ) );
+            obj.Design = Src.Design;
         end % addDesignAvailableListener
 
         function runSimulation( obj )
@@ -82,31 +83,32 @@ classdef DoEhook < handle
             notify( obj, 'RUN_EXPERIMENT' );
         end % runSimulation
 
-        function obj = addUpdateListener( obj, BoptObj )
+        function obj = addProcessNewQueryListener( obj, Src )
             %--------------------------------------------------------------
-            % Add a listener for the UPDATE event broadcast by a bayesOpt
+            % Add a listener for the PROCESS_NEW_QUERY event broadcast by
             % object
             %
-            % obj = obj.addUpdateListener( BoptObj )
+            % obj = obj.addProcessNewQueryListener( Src )
             %
             % Input Arguments:
             %
-            % BoptObj --> bayesOpt object
+            % Src --> ecomoInterface object
             %--------------------------------------------------------------
             arguments
-                obj     (1,1)   DoEhook 
-                BoptObj (1,1)   bayesOpt  { mustBeNonempty( BoptObj ) }
+                obj (1,1)   DoEhook 
+                Src (1,1)   ecomoInterface  { mustBeNonempty( Src ) }
             end
             %--------------------------------------------------------------
             % Define the listener
             %--------------------------------------------------------------
-            obj.Uh = addlistener( BoptObj, "UPDATE",...
-                      @( SrcObj, Evnt )obj.eventCbUpdate( SrcObj, Evnt ) );
-        end % addUpdateListener
+            obj.Uh = addlistener( Src, "PROCESS_NEW_QUERY",...
+                     @( Src, Evnt )obj.eventCbProcessNewQuery( Src,...
+                                                                  Evnt ) );
+        end % addProcessNewQueryListener
 
-        function obj = eventCbUpdate( obj, Src, E )
+        function obj = eventCbProcessNewQuery( obj, Src, E )
             %--------------------------------------------------------------
-            % UPDATE event listener
+            % PROCESS_NEW_QUERY event listener
             %
             % This function creates a table listing the parameters in the
             % experiment. Distributed parameters are converted to lookup
@@ -121,10 +123,11 @@ classdef DoEhook < handle
             % Event check
             %--------------------------------------------------------------
             Ename = string( E.EventName );
-            Ok = contains( "UPDATE", Ename );
+            Ok = contains( "PROCESS_NEW_QUERY", Ename );
             assert( Ok, 'Not processing the %s event supplied', Ename );
-            obj = obj.createParTableUpdate( Src );
-        end % eventCbUpdate
+            obj = obj.augmentParTable( Src );
+            notify( obj, 'RUN_EXPERIMENT' );
+        end % eventCbProcessNewQuery
 
         function obj = eventCb( obj, Src, E )
             %--------------------------------------------------------------
@@ -187,6 +190,45 @@ classdef DoEhook < handle
     end % ordinary methods
 
     methods ( Access = protected )
+        function obj = augmentParTable( obj, Src )
+            %--------------------------------------------------------------
+            % Augment the parameter table with the new query
+            %
+            % obj = obj.augmentParTable( Src );
+            %
+            % Input Arguments
+            %
+            % Src --> Event source object.
+            %--------------------------------------------------------------
+            D = obj.Design();
+            D( end + 1, : ) = Src.B.Xnext;
+            S = obj.Lh.Source{ : };
+            Fnames = string( S.Factors.Name );
+            Didx = S.DistIdx;
+            Aug = obj.ParTable( end, : );
+            for Q = 1:S.NumFactors
+                if Didx( Q )
+                    %------------------------------------------------------
+                    % Distributed factor. Calculate lookup table
+                    %------------------------------------------------------
+                    LookUp = obj.makeLookUp( S, Fnames( Q ), 1 );
+                    Aug( 1, Q ) = { LookUp };
+                else
+                    %------------------------------------------------------
+                    % Fixed parameter
+                    %------------------------------------------------------
+                    Col = S.DesignInfo{ Fnames( Q ), "Coefficients" };
+                    if iscell( Col )
+                        Col = Col{ : };
+                    end
+                    Aug( 1, Q ) = array2table( S.Design( 1, Col ) );
+                end
+            end % /Q
+            Aug.Simulated( end ) = false;
+            obj.ParTable = vertcat( obj.ParTable, Aug );
+            obj.Design = D;
+        end
+
         function obj = createParTable( obj, Src )
             %--------------------------------------------------------------
             % Creates the parameter table for running the experiment
