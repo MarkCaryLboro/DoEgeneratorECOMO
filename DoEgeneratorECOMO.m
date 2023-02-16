@@ -79,7 +79,11 @@ classdef DoEgeneratorECOMO < handle
                                        mustBeLessThanOrEqual( Xc, 1 ) }
                 Name    (1,1) string { mustBeNonempty( Name ) }
             end
-            Idx = contains( obj.Factors.Name, Name );
+            %--------------------------------------------------------------
+            % Find an exact match
+            %--------------------------------------------------------------
+            Idx = startsWith( obj.Factors.Name, Name ) & ...
+                  endsWith( obj.Factors.Name, Name );
             Ok = obj.Factors{ Idx, "Fixed" };
             assert( Ok, 'Factor "%s" is not a fixed parameter', Name);
             A = obj.Factors.Lo( Idx );
