@@ -98,6 +98,7 @@ classdef SobolSequence < DoEgeneratorECOMO
                 obj.NumPoints_ = N;
                 Des = net( P, obj.NumPoints );
             end
+            obj.NumColDes_ = D;
             %--------------------------------------------------------------
             % Decode the design
             %--------------------------------------------------------------

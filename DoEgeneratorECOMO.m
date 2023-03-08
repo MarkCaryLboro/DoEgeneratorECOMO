@@ -46,6 +46,31 @@ classdef DoEgeneratorECOMO < handle
     end % abstract method signatures
 
     methods
+        function obj = addDesignPoint( obj, Data )
+            %--------------------------------------------------------------
+            % Add a data point to the current design
+            %
+            % obj = obj.addDesignPoint( Data );
+            %
+            % Input Arguments:
+            %
+            % Data  --> (double) row vector of new design data in
+            %           engineering units.
+            %--------------------------------------------------------------
+            arguments
+                obj     (1,1)               { mustBeNonempty( obj ) }
+                Data    (1,:) double        
+            end
+            %--------------------------------------------------------------
+            % Check the data format
+            %--------------------------------------------------------------
+            Ok = obj.checkDataFormat( Data, obj.NumColDes_ );
+            assert( Ok, "Data must be numeric and have %3.0f columns",...
+                            obj.NumColDes_ );
+            obj.Design = [ obj.Design; Data ];
+            obj.NumPoints_ = size( obj.Design, 1 );
+        end % addDesignPoint
+
         function obj = updateListener( obj, BoptObj )
             %--------------------------------------------------------------
             % Create a listerner for the UPDATE event
@@ -121,11 +146,6 @@ classdef DoEgeneratorECOMO < handle
             % Export the design to the ECOMO model configuration class
             %
             % obj = export();
-            %
-            % Input Arguments:
-            %
-            % Dims --> (table) of distributed parameter lookup table
-            %          dimensions
             %--------------------------------------------------------------
             arguments
                 obj  (1,1)          { mustBeNonempty( obj ) }
@@ -443,9 +463,14 @@ classdef DoEgeneratorECOMO < handle
                 E     (1,1)                 { mustBeNonempty( E ) }         % EventData object 
             end
             %--------------------------------------------------------------
+            % Event check
+            %--------------------------------------------------------------
+            Ename = string( Evnt.EventName );
+            Ok = contains( "UPDATE", Ename );
+            assert( Ok, 'Not processing the %s event supplied', Ename );
+            %--------------------------------------------------------------
             % Update the design with the latest requested query location
             %--------------------------------------------------------------
-            
         end % updateCb
     end % Ordinary hidden methods
 
@@ -633,13 +658,26 @@ classdef DoEgeneratorECOMO < handle
                 Finish = Start + obj.Bspline{ Name, Str( Q ) } - 1;
                 Out{ Q } = Start:Finish;
             end
-%               Start = Finish + 1;
-%               Finish = Start + obj.Bspline{ Name, "NumBasis" } - 1;
-%               Out = Start:Finish;
         end % parseDistributed
     end % private methods
 
     methods ( Static = true, Access = protected )
+        function Ok = checkDataFormat( X, C )
+            %----------------------------------------------------------------------
+            % Check to see if the number of data columns is correct and all data is
+            % numeric.
+            %
+            % Ok = obj.checkDataFormat( X, C )
+            %
+            % Input Arguments:
+            %
+            % X     --> Data to augment the design with
+            % C     --> Number of expected columns
+            %----------------------------------------------------------------------
+            Ok = true;
+            Ok = Ok & all( isnumeric( X ) );
+            Ok = Ok & ( numel( X ) == C );
+        end % checkDataFormat
     end % static and protected methods
 
     methods

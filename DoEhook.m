@@ -198,35 +198,14 @@ classdef DoEhook < handle
             %
             % Input Arguments
             %
-            % Src --> Event source object.
+            % Src --> Event source object (ecomoInterface object).
             %--------------------------------------------------------------
-            D = obj.Design();
-            D( end + 1, : ) = Src.B.Xnext;
             S = obj.Lh.Source{ : };
-            Fnames = string( S.Factors.Name );
-            Didx = S.DistIdx;
-            Aug = obj.ParTable( end, : );
-            for Q = 1:S.NumFactors
-                if Didx( Q )
-                    %------------------------------------------------------
-                    % Distributed factor. Calculate lookup table
-                    %------------------------------------------------------
-                    LookUp = obj.makeLookUp( S, Fnames( Q ), 1 );
-                    Aug( 1, Q ) = { LookUp };
-                else
-                    %------------------------------------------------------
-                    % Fixed parameter
-                    %------------------------------------------------------
-                    Col = S.DesignInfo{ Fnames( Q ), "Coefficients" };
-                    if iscell( Col )
-                        Col = Col{ : };
-                    end
-                    Aug( 1, Q ) = array2table( S.Design( 1, Col ) );
-                end
-            end % /Q
-            Aug.Simulated( end ) = false;
-            obj.ParTable = vertcat( obj.ParTable, Aug );
-            obj.Design = D;
+            S = S.addDesignPoint( Src.B.Xnext );   
+            obj.Design = S.Design;
+            Simulated = [ obj.ParTable.Simulated; false ];
+            obj = obj.createParTable( S );
+            obj.ParTable.Simulated = Simulated;
         end
 
         function obj = createParTable( obj, Src )
@@ -307,7 +286,7 @@ classdef DoEhook < handle
             %
             % Input Arguments
             %
-            % Src       --> Event source object.
+            % D         --> Event source object.
             % Name      --> Name of parameter to process
             % RunNumber --> Current experimental design run
             %--------------------------------------------------------------
