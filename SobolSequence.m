@@ -76,7 +76,15 @@ classdef SobolSequence < DoEgeneratorECOMO
                 Opts.Scramble (1,1) logical        = false
             end
             obj = obj.clearDesign();
-            D = sum( obj.Bspline.NumPar ) + double( obj.NumFixed );
+            %--------------------------------------------------------------
+            % Determine number of parameters
+            %--------------------------------------------------------------
+            D = table2cell( obj.DesignInfo );
+            D = cellfun( @max, D );
+            D = max( D( : ) );                                              % Nan is ignored.
+            %--------------------------------------------------------------
+            % Now create the design
+            %--------------------------------------------------------------
             P = sobolset( D, "Leap", Opts.Leap, "Skip", Opts.Skip );
             if Opts.Scramble
                 %----------------------------------------------------------

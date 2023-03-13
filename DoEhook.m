@@ -234,6 +234,7 @@ classdef DoEhook < handle
                         %--------------------------------------------------
                         % Distributed factor. Calculate lookup table
                         %--------------------------------------------------
+                        
                         LookUp = obj.makeLookUp( Src, Fnames( Q ), R );
                         T( R, Q ) = { LookUp }; 
                     else
@@ -244,7 +245,7 @@ classdef DoEhook < handle
                         if iscell( Col )
                             Col = Col{ : };
                         end
-                        T( R, Q ) = array2table( Src.Design( R, Col ) );
+                        T( R, Q ) = array2table( { Src.Design( R, Col ) } );
                     end
                 end % Q
             end % R
@@ -266,11 +267,7 @@ classdef DoEhook < handle
             N = numel( Didx );
             VarTypes = cell( 1, N );
             for Q = 1:N
-                if Didx( Q )
-                    VarTypes{ Q } = 'cell';
-                else
-                    VarTypes{ Q } = 'double';
-                end
+                VarTypes{ Q } = 'cell';
             end % Q
             %--------------------------------------------------------------
             % Add the simulated column
@@ -293,6 +290,9 @@ classdef DoEhook < handle
             Info = Src.DesignInfo( Name, : );
             Idx = contains( Src.Factors.Name, Name );
             Sz = Src.Factors.Sz( Idx );
+            if iscell( Sz )
+                Sz = Sz{ : };
+            end
             LookUp = zeros( 2, Sz );
             LookUp( 1,: ) = linspace( 0, Src.TubeLength, Sz );              % Tube axial dimension to evaluate spline
             %--------------------------------------------------------------
