@@ -71,22 +71,6 @@ classdef DoEgeneratorECOMO < handle
             obj.NumPoints_ = size( obj.Design, 1 );
         end % addDesignPoint
 
-        function obj = updateListener( obj, BoptObj )
-            %--------------------------------------------------------------
-            % Create a listerner for the UPDATE event
-            %
-            % Input Arguments:
-            %
-            % BoptObj --> A bayesOpt object
-            %--------------------------------------------------------------
-            arguments
-                obj     (1,1)           { mustBeNonempty( obj )}
-                BoptObj (1,1) bayesOpt  { mustBeNonempty( BoptObj )}
-            end
-            obj.BOptLh = addlistener( BoptObj, "UPDATE",...
-                        @( SrcObj, Evnt )obj.updateCb( SrcObj, Evnt ) );
-        end % BoptObj
-
         function X = decode( obj, Xc, Name )
             %--------------------------------------------------------------
             % Decode from the interval [0,1] --> [a,b] for a fixed factor
@@ -189,10 +173,16 @@ classdef DoEgeneratorECOMO < handle
                     % Distributed factor
                     %------------------------------------------------------
                     Name = obj.Factors{ Q, "Name" };
-                    Kidx = obj.DesignInfo{ Q, "Knots" }{:};
+                    try
+                        Kidx = obj.DesignInfo{ Q, "Knots" }{:};
+                        Cidx = obj.DesignInfo{ Q, "Coefficients" }{:};
+                    catch
+                        Kidx = obj.DesignInfo{ Q, "Knots" };
+                        Cidx = obj.DesignInfo{ Q, "Coefficients" };
+                    end
                     B = obj.Bspline{ Name, "Object" };
                     K = B.decode( Des( :,Kidx ) );
-                    Cidx = obj.DesignInfo{ Q, "Coefficients" }{:};
+                    
                     C = obj.decodeSplineCoeff( Name, Des( :, Cidx ) );
                     Lo = obj.Factors.Lo( Q );
                     if iscell( Lo )
@@ -452,31 +442,6 @@ classdef DoEgeneratorECOMO < handle
             end % Q
         end % decodeDesign
     end % ordinary methods
-
-    methods ( Hidden = true )
-        function updateCb( obj, Src, E )
-            %--------------------------------------------------------------
-            % UPDATE event callback
-            %
-            % Generate a table of model parameters for the next point to 
-            % run for the Bayesian Optimisation algorithm
-            %--------------------------------------------------------------
-            arguments
-                obj   (1,1)                 { mustBeNonempty( obj )}        % DoEhook object
-                Src   (1,1) bayesOpt        { mustBeNonempty( Src ) }       % bayesOpt object
-                E     (1,1)                 { mustBeNonempty( E ) }         % EventData object 
-            end
-            %--------------------------------------------------------------
-            % Event check
-            %--------------------------------------------------------------
-            Ename = string( Evnt.EventName );
-            Ok = contains( "UPDATE", Ename );
-            assert( Ok, 'Not processing the %s event supplied', Ename );
-            %--------------------------------------------------------------
-            % Update the design with the latest requested query location
-            %--------------------------------------------------------------
-        end % updateCb
-    end % Ordinary hidden methods
 
     methods ( Access = protected )
         function obj = genDesignInfo( obj )

@@ -17,13 +17,16 @@ classdef DoEhook < handle
         ParTable    (:,:) table                                             % Parameter table in engineering units
         TubeLength  (1,1) double                                            % Length of the tube [mm]
         TubeIntDia  (1,1) double                                            % Clean inner diameter of tube [mm]
-        NumPoints   (1,1) int64                                             % Number of points in the design
         NumFactors  (1,1) int64                                             % Number of factors
         NumFixed    (1,1) int64                                             % Number of fixed factors
         NumDist     (1,1) int64                                             % Number of B-spline factors
         DistIdx     (1,:) logical                                           % Logical index to distributed parameters
         Design      (:,:) double                                            % Durrent experimental design in engineering units
     end % Protected properties
+
+    properties ( SetAccess = protected, Dependent = true )
+        NumPoints   (1,1) int64                                             % Number of points in the design
+    end % dependent properties
 
     methods
         function obj = DoEhook()
@@ -156,7 +159,6 @@ classdef DoEhook < handle
             %--------------------------------------------------------------
             % Set DoE Parameters
             %--------------------------------------------------------------
-            obj.NumPoints = Src.NumPoints;                                  % Number of points in the design
             obj.NumFactors = Src.NumFactors;                                % Number of factors
             obj.NumFixed = Src.NumFixed;                                    % Number of fixed factors
             obj.NumDist = Src.NumDist;                                      % Number of B-spline factors
@@ -188,6 +190,12 @@ classdef DoEhook < handle
             obj.ParTable.Simulated( N ) = State;
         end % setSimulated
     end % ordinary methods
+
+    methods
+        function N = get.NumPoints( obj )
+            N = int64( size( obj.Design, 1 ) );
+        end
+    end % Get/Set methods
 
     methods ( Access = protected )
         function obj = augmentParTable( obj, Src )
@@ -299,8 +307,14 @@ classdef DoEhook < handle
             % Point to the columns in the design table defining the spline
             % parameters
             %--------------------------------------------------------------
-            Coeff = Info.Coefficients{ : };
-            Knot = Info.Knots{ : };
+            Coeff = Info.Coefficients;
+            Knot = Info.Knots;
+            if iscell( Coeff )
+                Coeff = Info.Coefficients{ : };
+            end
+            if iscell( Knot )
+                Knot = Info.Knots{ : };
+            end
             %--------------------------------------------------------------
             % Capture the requested spline parameter values
             %--------------------------------------------------------------
