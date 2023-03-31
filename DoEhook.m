@@ -17,13 +17,16 @@ classdef DoEhook < handle
         ParTable    (:,:) table                                             % Parameter table in engineering units
         TubeLength  (1,1) double                                            % Length of the tube [mm]
         TubeIntDia  (1,1) double                                            % Clean inner diameter of tube [mm]
-        NumPoints   (1,1) int64                                             % Number of points in the design
         NumFactors  (1,1) int64                                             % Number of factors
         NumFixed    (1,1) int64                                             % Number of fixed factors
         NumDist     (1,1) int64                                             % Number of B-spline factors
         DistIdx     (1,:) logical                                           % Logical index to distributed parameters
         Design      (:,:) double                                            % Durrent experimental design in engineering units
     end % Protected properties
+
+    properties ( SetAccess = protected, Dependent = true )
+        NumPoints   (1,1) int64                                             % Number of points in the design
+    end % dependent properties
 
     methods
         function obj = DoEhook()
@@ -156,7 +159,6 @@ classdef DoEhook < handle
             %--------------------------------------------------------------
             % Set DoE Parameters
             %--------------------------------------------------------------
-            obj.NumPoints = Src.NumPoints;                                  % Number of points in the design
             obj.NumFactors = Src.NumFactors;                                % Number of factors
             obj.NumFixed = Src.NumFixed;                                    % Number of fixed factors
             obj.NumDist = Src.NumDist;                                      % Number of B-spline factors
@@ -189,6 +191,12 @@ classdef DoEhook < handle
         end % setSimulated
     end % ordinary methods
 
+    methods
+        function N = get.NumPoints( obj )
+            N = int64( size( obj.Design, 1 ) );
+        end
+    end % Get/Set methods
+
     methods ( Access = protected )
         function obj = augmentParTable( obj, Src )
             %--------------------------------------------------------------
@@ -198,35 +206,14 @@ classdef DoEhook < handle
             %
             % Input Arguments
             %
-            % Src --> Event source object.
+            % Src --> Event source object (ecomoInterface object).
             %--------------------------------------------------------------
-            D = obj.Design();
-            D( end + 1, : ) = Src.B.Xnext;
             S = obj.Lh.Source{ : };
-            Fnames = string( S.Factors.Name );
-            Didx = S.DistIdx;
-            Aug = obj.ParTable( end, : );
-            for Q = 1:S.NumFactors
-                if Didx( Q )
-                    %------------------------------------------------------
-                    % Distributed factor. Calculate lookup table
-                    %------------------------------------------------------
-                    LookUp = obj.makeLookUp( S, Fnames( Q ), 1 );
-                    Aug( 1, Q ) = { LookUp };
-                else
-                    %------------------------------------------------------
-                    % Fixed parameter
-                    %------------------------------------------------------
-                    Col = S.DesignInfo{ Fnames( Q ), "Coefficients" };
-                    if iscell( Col )
-                        Col = Col{ : };
-                    end
-                    Aug( 1, Q ) = array2table( S.Design( 1, Col ) );
-                end
-            end % /Q
-            Aug.Simulated( end ) = false;
-            obj.ParTable = vertcat( obj.ParTable, Aug );
-            obj.Design = D;
+            S = S.addDesignPoint( Src.B.Xnext );   
+            obj.Design = S.Design;
+            Simulated = [ obj.ParTable.Simulated; false ];
+            obj = obj.createParTable( S );
+            obj.ParTable.Simulated = Simulated;
         end
 
         function obj = createParTable( obj, Src )
@@ -255,6 +242,7 @@ classdef DoEhook < handle
                         %--------------------------------------------------
                         % Distributed factor. Calculate lookup table
                         %--------------------------------------------------
+                        
                         LookUp = obj.makeLookUp( Src, Fnames( Q ), R );
                         T( R, Q ) = { LookUp }; 
                     else
@@ -265,7 +253,7 @@ classdef DoEhook < handle
                         if iscell( Col )
                             Col = Col{ : };
                         end
-                        T( R, Q ) = array2table( Src.Design( R, Col ) );
+                        T( R, Q ) = array2table( { Src.Design( R, Col ) } );
                     end
                 end % Q
             end % R
@@ -287,11 +275,7 @@ classdef DoEhook < handle
             N = numel( Didx );
             VarTypes = cell( 1, N );
             for Q = 1:N
-                if Didx( Q )
-                    VarTypes{ Q } = 'cell';
-                else
-                    VarTypes{ Q } = 'double';
-                end
+                VarTypes{ Q } = 'cell';
             end % Q
             %--------------------------------------------------------------
             % Add the simulated column
@@ -307,21 +291,30 @@ classdef DoEhook < handle
             %
             % Input Arguments
             %
-            % Src       --> Event source object.
+            % D         --> Event source object.
             % Name      --> Name of parameter to process
             % RunNumber --> Current experimental design run
             %--------------------------------------------------------------
             Info = Src.DesignInfo( Name, : );
             Idx = contains( Src.Factors.Name, Name );
             Sz = Src.Factors.Sz( Idx );
+            if iscell( Sz )
+                Sz = Sz{ : };
+            end
             LookUp = zeros( 2, Sz );
             LookUp( 1,: ) = linspace( 0, Src.TubeLength, Sz );              % Tube axial dimension to evaluate spline
             %--------------------------------------------------------------
             % Point to the columns in the design table defining the spline
             % parameters
             %--------------------------------------------------------------
-            Coeff = Info.Coefficients{ : };
-            Knot = Info.Knots{ : };
+            Coeff = Info.Coefficients;
+            Knot = Info.Knots;
+            if iscell( Coeff )
+                Coeff = Info.Coefficients{ : };
+            end
+            if iscell( Knot )
+                Knot = Info.Knots{ : };
+            end
             %--------------------------------------------------------------
             % Capture the requested spline parameter values
             %--------------------------------------------------------------

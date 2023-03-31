@@ -46,21 +46,30 @@ classdef DoEgeneratorECOMO < handle
     end % abstract method signatures
 
     methods
-        function obj = updateListener( obj, BoptObj )
+        function obj = addDesignPoint( obj, Data )
             %--------------------------------------------------------------
-            % Create a listerner for the UPDATE event
+            % Add a data point to the current design
+            %
+            % obj = obj.addDesignPoint( Data );
             %
             % Input Arguments:
             %
-            % BoptObj --> A bayesOpt object
+            % Data  --> (double) row vector of new design data in
+            %           engineering units.
             %--------------------------------------------------------------
             arguments
-                obj     (1,1)           { mustBeNonempty( obj )}
-                BoptObj (1,1) bayesOpt  { mustBeNonempty( BoptObj )}
+                obj     (1,1)               { mustBeNonempty( obj ) }
+                Data    (1,:) double        
             end
-            obj.BOptLh = addlistener( BoptObj, "UPDATE",...
-                        @( SrcObj, Evnt )obj.updateCb( SrcObj, Evnt ) );
-        end % BoptObj
+            %--------------------------------------------------------------
+            % Check the data format
+            %--------------------------------------------------------------
+            Ok = obj.checkDataFormat( Data, obj.NumColDes_ );
+            assert( Ok, "Data must be numeric and have %3.0f columns",...
+                            obj.NumColDes_ );
+            obj.Design = [ obj.Design; Data ];
+            obj.NumPoints_ = size( obj.Design, 1 );
+        end % addDesignPoint
 
         function X = decode( obj, Xc, Name )
             %--------------------------------------------------------------
@@ -75,7 +84,7 @@ classdef DoEgeneratorECOMO < handle
             %--------------------------------------------------------------
             arguments
                 obj     (1,1)        { mustBeNonempty( obj ) }
-                Xc      (:,1) double { mustBeGreaterThanOrEqual( Xc, 0 ),...
+                Xc      (:,:) double { mustBeGreaterThanOrEqual( Xc, 0 ),...
                                        mustBeLessThanOrEqual( Xc, 1 ) }
                 Name    (1,1) string { mustBeNonempty( Name ) }
             end
@@ -86,8 +95,7 @@ classdef DoEgeneratorECOMO < handle
                   endsWith( obj.Factors.Name, Name );
             Ok = obj.Factors{ Idx, "Fixed" };
             assert( Ok, 'Factor "%s" is not a fixed parameter', Name);
-            A = obj.Factors.Lo( Idx );
-            B = obj.Factors.Hi( Idx );
+            [ A, B ] = obj.getLimits( Idx );
             X = ( B - A ) .* Xc + A;
         end % decode
 
@@ -111,8 +119,7 @@ classdef DoEgeneratorECOMO < handle
             Idx = contains( obj.Factors.Name, Name );
             Ok = obj.Factors{ Idx, "Fixed" };
             assert( Ok, 'Factor "%s" is not a fixed parameter', Name);
-            A = obj.Factors.Lo( Idx );
-            B = obj.Factors.Hi( Idx );
+            [ A, B ] = obj.getLimits( Idx );
             Xc = ( X - A ) ./ ( B - A );
         end % code
 
@@ -121,11 +128,6 @@ classdef DoEgeneratorECOMO < handle
             % Export the design to the ECOMO model configuration class
             %
             % obj = export();
-            %
-            % Input Arguments:
-            %
-            % Dims --> (table) of distributed parameter lookup table
-            %          dimensions
             %--------------------------------------------------------------
             arguments
                 obj  (1,1)          { mustBeNonempty( obj ) }
@@ -171,13 +173,25 @@ classdef DoEgeneratorECOMO < handle
                     % Distributed factor
                     %------------------------------------------------------
                     Name = obj.Factors{ Q, "Name" };
-                    Kidx = obj.DesignInfo{ Q, "Knots" }{:};
+                    try
+                        Kidx = obj.DesignInfo{ Q, "Knots" }{:};
+                        Cidx = obj.DesignInfo{ Q, "Coefficients" }{:};
+                    catch
+                        Kidx = obj.DesignInfo{ Q, "Knots" };
+                        Cidx = obj.DesignInfo{ Q, "Coefficients" };
+                    end
                     B = obj.Bspline{ Name, "Object" };
                     K = B.decode( Des( :,Kidx ) );
-                    Cidx = obj.DesignInfo{ Q, "Coefficients" }{:};
+                    
                     C = obj.decodeSplineCoeff( Name, Des( :, Cidx ) );
                     Lo = obj.Factors.Lo( Q );
+                    if iscell( Lo )
+                        Lo = Lo{ : };
+                    end
                     Hi = obj.Factors.Hi( Q );
+                    if iscell( Hi )
+                        Hi = Hi{ : };
+                    end                    
                     Ok = false( size( Des, 1 ), 1 );
                     for R = 1:size( C, 1 )
                         %--------------------------------------------------
@@ -429,26 +443,6 @@ classdef DoEgeneratorECOMO < handle
         end % decodeDesign
     end % ordinary methods
 
-    methods ( Hidden = true )
-        function updateCb( obj, Src, E )
-            %--------------------------------------------------------------
-            % UPDATE event callback
-            %
-            % Generate a table of model parameters for the next point to 
-            % run for the Bayesian Optimisation algorithm
-            %--------------------------------------------------------------
-            arguments
-                obj   (1,1)                 { mustBeNonempty( obj )}        % DoEhook object
-                Src   (1,1) bayesOpt        { mustBeNonempty( Src ) }       % bayesOpt object
-                E     (1,1)                 { mustBeNonempty( E ) }         % EventData object 
-            end
-            %--------------------------------------------------------------
-            % Update the design with the latest requested query location
-            %--------------------------------------------------------------
-            
-        end % updateCb
-    end % Ordinary hidden methods
-
     methods ( Access = protected )
         function obj = genDesignInfo( obj )
             %--------------------------------------------------------------
@@ -467,8 +461,18 @@ classdef DoEgeneratorECOMO < handle
                     %------------------------------------------------------
                     % Parse a fixed factor
                     %------------------------------------------------------
-                    Finish = Finish + 1;
-                    D( Q,: ) = { Finish, nan };
+                    Start = Finish + 1;
+                    Sz = obj.Factors.Sz( Q );
+                    if iscell( Sz )
+                        Sz = Sz{ : };
+                    end
+                    if isscalar( Sz )
+                        Sz = size( Sz );
+                    end
+                    Finish = prod( Sz ) + Start - 1;
+                    Coeff = ( Start:Finish );
+                    Knots = nan;
+                    D( Q,: ) = { Coeff, Knots };
                 else
                     %------------------------------------------------------
                     % Parse the distributed factor
@@ -604,7 +608,13 @@ classdef DoEgeneratorECOMO < handle
             %--------------------------------------------------------------
             Idx = contains( obj.Factors.Name, Name );
             A = obj.Factors{ Idx, "Lo" };
+            if iscell( A )
+                A = A{ : };
+            end            
             B = obj.Factors{ Idx, "Hi" };
+            if iscell( B )
+                B = B{ : };
+            end
             Coeff =  ( B - A ) .* Coeffc +  A;
         end % decodeSplineCoeff
 
@@ -633,13 +643,56 @@ classdef DoEgeneratorECOMO < handle
                 Finish = Start + obj.Bspline{ Name, Str( Q ) } - 1;
                 Out{ Q } = Start:Finish;
             end
-%               Start = Finish + 1;
-%               Finish = Start + obj.Bspline{ Name, "NumBasis" } - 1;
-%               Out = Start:Finish;
         end % parseDistributed
+
+        function [ A, B ] = getLimits( obj, Idx )
+            %--------------------------------------------------------------
+            % Return the Hi & Lo limits for a factor
+            %
+            % [ A, B ] = obj.getLimits( Idx );
+            %
+            % Input Arguments:
+            %
+            % Idx   --> (logical) Pointer to limit information
+            %
+            % Output Arguments:
+            %
+            % A     --> (double) Low limits
+            % B     --> (double) Hi limits
+            %--------------------------------------------------------------
+            A = obj.Factors.Lo( Idx );
+            if iscell( A )
+                A = A{ : };
+            end
+            B = obj.Factors.Hi( Idx );
+            if iscell( B )
+                B = B{ : };
+            end     
+            %--------------------------------------------------------------
+            % Handle the matrix case by reshaping the A and B matrices
+            %--------------------------------------------------------------
+            A = reshape( A, 1, numel( A ) );
+            B = reshape( B, 1, numel( B ) );            
+        end % getLimits
     end % private methods
 
     methods ( Static = true, Access = protected )
+        function Ok = checkDataFormat( X, C )
+            %----------------------------------------------------------------------
+            % Check to see if the number of data columns is correct and all data is
+            % numeric.
+            %
+            % Ok = obj.checkDataFormat( X, C )
+            %
+            % Input Arguments:
+            %
+            % X     --> Data to augment the design with
+            % C     --> Number of expected columns
+            %----------------------------------------------------------------------
+            Ok = true;
+            Ok = Ok & all( isnumeric( X ) );
+            Ok = Ok & ( numel( X ) == C );
+        end % checkDataFormat
     end % static and protected methods
 
     methods
