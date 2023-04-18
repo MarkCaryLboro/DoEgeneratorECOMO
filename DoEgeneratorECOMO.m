@@ -7,7 +7,7 @@ classdef DoEgeneratorECOMO < handle
     end % events
 
     properties ( Constant = true, Access = protected)
-        Expected    string = [ "Name", "Units", "Fixed", "Lo", "Hi", "Sz" ];
+        Expected    string = [ "Name", "Units", "Fixed", "Lo", "Hi", "Sz", "Type" ];
     end % constant properties
 
     properties ( Access = protected )
@@ -324,6 +324,9 @@ classdef DoEgeneratorECOMO < handle
             %             Sz    - (int64) Size of corresponding lookup
             %                     table (only for distributed parameters).
             %                     Set to 1 if the factor is fixed.
+            %             Type  - (string) Set to "Parameter" to denote am 
+            %                     identifable coefficient of "Boundary" to
+            %                     denote a boundary condition.
             %
             % Note each dimension of S must define a different factor.
             %
@@ -462,13 +465,7 @@ classdef DoEgeneratorECOMO < handle
                     % Parse a fixed factor
                     %------------------------------------------------------
                     Start = Finish + 1;
-                    Sz = obj.Factors.Sz( Q );
-                    if iscell( Sz )
-                        Sz = Sz{ : };
-                    end
-                    if isscalar( Sz )
-                        Sz = size( Sz );
-                    end
+                    Sz = obj.Factors.Sz( Q, : );
                     Finish = prod( Sz ) + Start - 1;
                     Coeff = ( Start:Finish );
                     Knots = nan;
@@ -582,6 +579,8 @@ classdef DoEgeneratorECOMO < handle
             %                    if distributed factor.
             %            Lo    - (double) Low natural limit for factor
             %            Hi    - (double) High natural limit for factor
+            %            Type  - (string) Dentoes "Parameter" or "Boundary"
+            %                    condition
             %--------------------------------------------------------------
             Ok = false( size( obj.Expected ) );
             F = fieldnames( S );

@@ -22,6 +22,7 @@ classdef DoEhook < handle
         NumDist     (1,1) int64                                             % Number of B-spline factors
         DistIdx     (1,:) logical                                           % Logical index to distributed parameters
         Design      (:,:) double                                            % Durrent experimental design in engineering units
+        Type        (1,:) string                                            % String array of variable types (Parameter or Boundary)
     end % Protected properties
 
     properties ( SetAccess = protected, Dependent = true )
@@ -230,9 +231,10 @@ classdef DoEhook < handle
             Fnames = string( Src.Factors.Name );
             Npts = Src.NumPoints;
             VarTypes = obj.createVarTypes( Didx );
-            T = table( 'Size', [ Npts, Src.NumFactors + 1 ],...
+            T = table( 'Size', [ Npts, numel( VarTypes ) ],...
                 'VariableTypes', VarTypes );
             T.Properties.VariableNames = [ Fnames; "Simulated" ];
+            obj.Type = obj.getParameterTypes( Src ); 
             for R = 1:Npts
                 %----------------------------------------------------------
                 % Fill out the table a row at a time
@@ -242,7 +244,6 @@ classdef DoEhook < handle
                         %--------------------------------------------------
                         % Distributed factor. Calculate lookup table
                         %--------------------------------------------------
-                        
                         LookUp = obj.makeLookUp( Src, Fnames( Q ), R );
                         T( R, Q ) = { LookUp }; 
                     else
@@ -253,7 +254,16 @@ classdef DoEhook < handle
                         if iscell( Col )
                             Col = Col{ : };
                         end
-                        T( R, Q ) = array2table( { Src.Design( R, Col ) } );
+                        Sz = Src.Factors.Sz( Q,: );
+                        if iscell( Sz )
+                            Sz = cell2mat( Sz );
+                        end
+                        D = { Src.Design( R, Col ) };
+                        if iscell( D )
+                            D = cell2mat( D );
+                        end
+                        D = reshape( D, Sz );
+                        T( R, Q ) = array2table( { D } );
                     end
                 end % Q
             end % R
@@ -262,6 +272,21 @@ classdef DoEhook < handle
     end % protected methods
 
     methods ( Access = private, Static = true )
+        function V = getParameterTypes( Src )
+            %--------------------------------------------------------------
+            % Create a string array detailing whether each design factor is
+            % either an identifiable parameter or a boundary condition
+            %
+            % V = obj.getParameterTypes( Src )
+            %
+            % Input arguments:
+            %
+            % Src       --> Event source object.
+            %--------------------------------------------------------------
+            V = Src.Factors.Type;
+            V = reshape( V, 1, numel( V ) );
+        end % getParameterTypes
+
         function VarTypes = createVarTypes( Didx )
             %--------------------------------------------------------------
             % Create a cell array of variable types
@@ -291,18 +316,15 @@ classdef DoEhook < handle
             %
             % Input Arguments
             %
-            % D         --> Event source object.
+            % Src       --> Event source object.
             % Name      --> Name of parameter to process
             % RunNumber --> Current experimental design run
             %--------------------------------------------------------------
             Info = Src.DesignInfo( Name, : );
             Idx = contains( Src.Factors.Name, Name );
-            Sz = Src.Factors.Sz( Idx );
-            if iscell( Sz )
-                Sz = Sz{ : };
-            end
-            LookUp = zeros( 2, Sz );
-            LookUp( 1,: ) = linspace( 0, Src.TubeLength, Sz );              % Tube axial dimension to evaluate spline
+            Sz = Src.Factors.Sz( Idx, : );
+            LookUp = zeros( Sz );
+            LookUp( 1,: ) = linspace( 0, Src.TubeLength, max( Sz ) );       % Tube axial dimension to evaluate spline
             %--------------------------------------------------------------
             % Point to the columns in the design table defining the spline
             % parameters
@@ -326,6 +348,13 @@ classdef DoEhook < handle
             Y = Src.evalSpline( LookUp( 1,: ), Name, Coeff, Knot );
             LookUp( 2,: ) = reshape( Y, 1, numel( Y ) );
             LookUp( 1,: ) = 0.001 * LookUp( 1,: );                          % Convert to [m] for simulation
+            %--------------------------------------------------------------
+            % Transpose if a Boundary Condition
+            %--------------------------------------------------------------
+%             if contains( Src.Factors.Type( Idx ), "Boundary" )
+% %                 LookUp = LookUp.';
+%             end
+             LookUp = LookUp.';
         end
     end % private methods
 end % DoEhook

@@ -4,7 +4,6 @@ classdef SobolSequence < DoEgeneratorECOMO
     % for the ECOMO model identification approach using Bayesian 
     % Optimisation.
     %----------------------------------------------------------------------
-    
     methods
         function obj = SobolSequence( Factors, Opts )
             %--------------------------------------------------------------
