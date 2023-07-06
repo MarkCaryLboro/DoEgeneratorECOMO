@@ -5,7 +5,7 @@ classdef SobolSequence < DoEgeneratorECOMO
     % Optimisation.
     %----------------------------------------------------------------------
     methods
-        function obj = SobolSequence( Factors, Opts )
+        function obj = SobolSequence( Factors, Con, Opts )
             %--------------------------------------------------------------
             % Class constructor
             %
@@ -23,6 +23,7 @@ classdef SobolSequence < DoEgeneratorECOMO
             %               Lo    - (double) Low natural limit for factor
             %               Hi    - (double) High natural limit for factor
             %
+            % 
             % Optional Arguments:
             % 
             % Name   --> (string), may be either "M" for spline order or
@@ -39,12 +40,14 @@ classdef SobolSequence < DoEgeneratorECOMO
             %           obj = SobolSequence( Factors, "K", [2, 3], "M", 4 )
             %--------------------------------------------------------------
             arguments
-                Factors (1,:) struct
+                Factors (1,:) struct    
+                Con     (1,:) struct
                 Opts.M  (:,1) int8      = 4
                 Opts.K  (:,1) int8      = 2
             end
             if nargin > 0 && all( obj.fieldCheck( Factors ) )
-                obj = obj.addFactor( Factors, "K", Opts.K, "M", Opts.M );
+                obj = obj.addFactor( Factors, Con, "K", Opts.K,...
+                                                   "M", Opts.M );
             else
                 warning( "Missing fields in input structure" );
             end
@@ -71,8 +74,8 @@ classdef SobolSequence < DoEgeneratorECOMO
                 N             (1,1)   int64        { mustBePositive( N ) } = 101;
                 Opts.Leap     (1,1)   double       = max( primes( 7301 ) );
                 Opts.Skip     (1,1)   double       = max( primes( 49 ) );
-                Opts.Con      (1,1)   logical      = false
-                Opts.Scramble (1,1) logical        = false
+                Opts.Con      (1,1)   logical      = true
+                Opts.Scramble (1,1)   logical      = false
             end
             obj = obj.clearDesign();
             %--------------------------------------------------------------
@@ -99,8 +102,8 @@ classdef SobolSequence < DoEgeneratorECOMO
                 % factors
                 %----------------------------------------------------------
                 Des = net( P, N );                                          % Coded on interval [ 0,1 ]
-                obj = obj.applyConstraints( N, Des );                       % Retain only feasible combinations 
-                obj.NumPoints_ = size( obj.Design, 1 );
+                Des = obj.applyConstraints( N, Des );                       % Retain only feasible combinations 
+                obj.NumPoints_ = size( Des, 1 );
             else
                 obj.NumPoints_ = N;
                 Des = net( P, obj.NumPoints );

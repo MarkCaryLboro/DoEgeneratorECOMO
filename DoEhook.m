@@ -23,6 +23,7 @@ classdef DoEhook < handle
         DistIdx     (1,:) logical                                           % Logical index to distributed parameters
         Design      (:,:) double                                            % Durrent experimental design in engineering units
         Type        (1,:) string                                            % String array of variable types (Parameter or Boundary)
+        DesObj      (1,1)                                                   % Experimental design object
     end % Protected properties
 
     properties ( SetAccess = protected, Dependent = true )
@@ -41,8 +42,9 @@ classdef DoEhook < handle
             %--------------------------------------------------------------
             % Capture the configuration file for the ECOMO model
             %--------------------------------------------------------------
-            [ File, Path ] = uigetfile(".m","Select ECOMO model configuration file", "MultiSelect","off");
+            [ File, Path ] = uigetfile(".m","Select ECOMO model configuration function", "initialization_for_foulingModel.m", "MultiSelect","off");
             obj.ConfigFile = fullfile( Path, File );
+            [ ~, obj.ConfigFile, ~ ] = fileparts( obj.ConfigFile );
             Ok = true;
             if ( File == 0 )
                 Ok = false;
@@ -152,6 +154,10 @@ classdef DoEhook < handle
             Ename = string( E.EventName );
             Ok = contains( "DESIGN_AVAILABLE", Ename );
             assert( Ok, 'Not processing the %s event supplied', Ename );
+            %--------------------------------------------------------------
+            % Save the SobolSequence object
+            %--------------------------------------------------------------
+            obj.DesObj = Src;
             %--------------------------------------------------------------
             % Set geometric parameters
             %--------------------------------------------------------------
@@ -348,13 +354,7 @@ classdef DoEhook < handle
             Y = Src.evalSpline( LookUp( 1,: ), Name, Coeff, Knot );
             LookUp( 2,: ) = reshape( Y, 1, numel( Y ) );
             LookUp( 1,: ) = 0.001 * LookUp( 1,: );                          % Convert to [m] for simulation
-            %--------------------------------------------------------------
-            % Transpose if a Boundary Condition
-            %--------------------------------------------------------------
-%             if contains( Src.Factors.Type( Idx ), "Boundary" )
-% %                 LookUp = LookUp.';
-%             end
-             LookUp = LookUp.';
+            LookUp = LookUp.';
         end
     end % private methods
 end % DoEhook

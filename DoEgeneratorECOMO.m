@@ -8,6 +8,7 @@ classdef DoEgeneratorECOMO < handle
 
     properties ( Constant = true, Access = protected)
         Expected    string = [ "Name", "Units", "Fixed", "Lo", "Hi", "Sz", "Type" ];
+        ExpectCon = [ "name", "derivative", "type", "value", "x" ];
     end % constant properties
 
     properties ( Access = protected )
@@ -19,7 +20,7 @@ classdef DoEgeneratorECOMO < handle
     properties ( SetAccess = protected )
         Design      (:,:)    double                                         % Design array
         DesignInfo  (:,:)    table                                          % Table of pointers to make it easy to populate the design table
-        Bspline     (:,4)    table                                          % Table of bSplineTools objects (one row for each distributed parameter)
+        Bspline     (:,:)    table                                          % Table of bSplineTools objects (one row for each distributed parameter)
         Factors     (:,:)    table                                          % Factor details and type
         Scramble    (1,1)    logical = false                                % Set to true to apply scramble to design
         TubeLength  (1,1)    double  = 185.00                               % Length of the tube [mm]
@@ -138,81 +139,104 @@ classdef DoEgeneratorECOMO < handle
                 warning( 'Design not generated!' );
             end
         end % export
-
-        function obj = applyConstraints( obj, Sz, Des )
+        
+        function D = applyConstraints( obj, Sz, Des )
             %--------------------------------------------------------------
-            % Apply interval constraints to the distributed parameters.
-            % Spline evaluations outside the supplied range are removed
+            % Apply derivative constraints to the distributed parameter.
+            % Spline evaluations outside the defined range are removed
             % from the experiment.
             % 
-            % obj = obj.applyConstraints( Des )
+            % D = obj.applyConstraints( Sz, Des );
             %
             % Input Arguments
             %
-            % Des --> Current design set
             % Sz  --> Desired size of design
+            % Des --> Current design set
             %--------------------------------------------------------------
             arguments
                 obj (1,1)         { mustBeNonempty( obj ) }
                 Sz  (1,1)  double
                 Des (:,:)  double                           = obj.Design
             end
+            %--------------------------------------------------------------
+            % Point to the distributed factors
+            %--------------------------------------------------------------
             N = 1:obj.NumFactors;
-            X = linspace( 0, obj.TubeLength, 1001 );                        % Define axial dimension
-            Idx = true( size( Des, 1 ), obj.NumFactors );
-            for Q = N
+            N = N( obj.DistIdx );
+            %--------------------------------------------------------------
+            % Apply the constraints
+            %--------------------------------------------------------------
+            X = linspace( 0, obj.TubeLength, 101 );                         % Define axial dimension for spline evaluation
+            Idx = obj.intializeConstraintPtr( size( Des, 1 ) );             % Initialise the feasible points pointer
+            ConCounter = 0;
+            for I = 1:numel( N )
                 %----------------------------------------------------------
-                % Evaluate the splines
+                % Evaluate the necessary spline derivatives
                 %
-                % 1. Extract coefficients and decode
+                % 1. Parse the constraint
                 % 2. Extract knots and decode
-                % 3. Evaluate spline
+                % 3. Evaluate spline derivative constraint
                 %----------------------------------------------------------
-                if ~obj.Factors{ Q, "Fixed" }
+                Q = N( I );
+                C = obj.Bspline.Constraint{ Q };
+                if ~isempty( C )
+                    Name = C.name;
                     %------------------------------------------------------
-                    % Distributed factor
+                    % Parse the constraint and evaluate the derivative
                     %------------------------------------------------------
-                    Name = obj.Factors{ Q, "Name" };
-                    try
-                        Kidx = obj.DesignInfo{ Q, "Knots" }{:};
-                        Cidx = obj.DesignInfo{ Q, "Coefficients" }{:};
-                    catch
-                        Kidx = obj.DesignInfo{ Q, "Knots" };
-                        Cidx = obj.DesignInfo{ Q, "Coefficients" };
-                    end
-                    B = obj.Bspline{ Name, "Object" };
-                    K = B.decode( Des( :,Kidx ) );
-                    
-                    C = obj.decodeSplineCoeff( Name, Des( :, Cidx ) );
-                    Lo = obj.Factors.Lo( Q );
-                    if iscell( Lo )
-                        Lo = Lo{ : };
-                    end
-                    Hi = obj.Factors.Hi( Q );
-                    if iscell( Hi )
-                        Hi = Hi{ : };
-                    end                    
-                    Ok = false( size( Des, 1 ), 1 );
-                    for R = 1:size( C, 1 )
-                        %--------------------------------------------------
-                        % Evaluate the spline
-                        %--------------------------------------------------
-                        Y = obj.evalSpline( X, Name, C( R,: ), K( R,: ) );
-                        Ok( R ) = all( ( Y >= Lo ) & ( Y <= Hi ) );
-                    end
-                    Idx( :, Q ) = Ok;
+                    NumCon = max( size( C ) );
+                    B = obj.Bspline{ Name, "Object" };                      % retrieve the spline object
+                    Kidx = obj.DesignInfo{ Name, "Knots" };                 % retrieve the knots
+                    Cidx = obj.DesignInfo{ Name, "Coefficients" }{:};       % retrieve the coefficients
+                    %------------------------------------------------------
+                    % Decode knots and coeffcients
+                    %------------------------------------------------------
+                    K = sort( B.decode( Des( :,Kidx ) ), 2 );
+                    Co = obj.decodeSplineCoeff( Name, Des( :, Cidx ) );
+                    for QQ = 1:NumCon
+                        ConCounter = ConCounter + 1;
+                        Ok = false( size( Des( :, 1 ) ) );
+                        for R = 1:size( Des, 1 )
+                            %----------------------------------------------
+                            % Evaluate the spline derivative constraint
+                            %----------------------------------------------
+                            B.n = K( R, : );
+                            B.alpha = Co( R, : );
+                            Y = B.calcDerivative( X, C( QQ ).derivative );
+                            Type = string( C( QQ ).type );
+                            switch Type
+                                case ">"
+                                    Ok( R ) = all( Y > C( QQ ).value );
+                                case { ">=", "=>" }
+                                    Ok( R ) = all( Y >= C( QQ ).value );
+                                case "<"
+                                    Ok( R ) = all( Y < C( QQ ).value );
+                                case { "<=", "=<" }
+                                    Ok( R ) = all( Y <= C( QQ ).value );
+                                otherwise
+                                    Ok( R ) = all( Y == C( QQ ).value );
+                            end
+                        end
+                        Idx( :, ConCounter ) = Ok;
+                    end % /QQ
                 end
-            end
+            end % /I
             %--------------------------------------------------------------
             % Now select the valid design points
             %--------------------------------------------------------------
             Idx = all( Idx, 2 );
-            Des = Des( Idx,: );
             NumFeasible = sum( Idx );
             if ( NumFeasible > Sz )
-                Des = Des( 1:Sz,: );
+                % Too many feasible points
+                D = Des( 1:Sz, : );
+            elseif ( NumFeasible == 0 )
+                % No feasible points, so just return a design of the right
+                % size.
+                D = Des( 1:Sz, : );
+            else
+                % Return a feasible design
+                D = Des( Idx, : );
             end
-            obj.Design = Des;
         end % applyConstraints
 
         function Y = evalSpline( obj, X, Name, Coeff, Knot )
@@ -302,13 +326,13 @@ classdef DoEgeneratorECOMO < handle
             obj.Scramble = false;
         end % clearDesign
 
-        function obj = addFactor( obj, S, Opts )
+        function obj = addFactor( obj, S, C, Opts )
             %--------------------------------------------------------------
             % Add a factor to the factor table property. If factor is
             % already defined, details are overwritten with the new
             % information supplied.
             %
-            % obj.addFactor( S, Name, Value );
+            % obj.addFactor( S, C, Name, Value );
             %
             % Input Arguments:
             %
@@ -344,6 +368,7 @@ classdef DoEgeneratorECOMO < handle
             arguments
                 obj     (1,1)   
                 S       (1,:)   struct   { mustBeNonempty( S ) }
+                C       (1,:)   struct = struct.empty(1,0)  
                 Opts.M  (:,1)   int8 = 4
                 Opts.K  (:,1)   int8 = 2
             end
@@ -389,7 +414,7 @@ classdef DoEgeneratorECOMO < handle
             %--------------------------------------------------------------
             % Create B-spline array for distributed factors
             %--------------------------------------------------------------
-            obj = obj.createBsplineTable( Opts.M, Opts.K );
+            obj = obj.createBsplineTable( C, Opts.M, Opts.K);
             %--------------------------------------------------------------
             % Generate the design information linking columns of the design
             % matrix to factor values
@@ -447,6 +472,34 @@ classdef DoEgeneratorECOMO < handle
     end % ordinary methods
 
     methods ( Access = protected )
+        function Idx = intializeConstraintPtr( obj, N )
+            %--------------------------------------------------------------
+            % Return a logical array with columns corresponding to
+            % constraints and rows to design points.
+            %
+            % Idx = obj.intializeConstraintPtr( N );
+            %
+            % Input Arguments:
+            %
+            % N --> (double) number of design points
+            %--------------------------------------------------------------
+            C = obj.Bspline.Constraint;
+            %--------------------------------------------------------------
+            % Determine the number of constraints
+            %--------------------------------------------------------------
+            NumCon = 0;
+            for Q = 1:max( size( C ) )
+                S = C{ Q };
+                if ~ isempty( S )
+                    NumCon = NumCon + max( size( S ) );
+                end
+            end
+            %--------------------------------------------------------------
+            % Define the logical output array
+            %--------------------------------------------------------------
+            Idx = false( N, NumCon );
+        end % intializeConstraintPtr
+
         function obj = genDesignInfo( obj )
             %--------------------------------------------------------------
             % Create a table decoding the design table information
@@ -487,15 +540,26 @@ classdef DoEgeneratorECOMO < handle
             obj.DesignInfo = D;
         end % genDesignInfo
 
-        function obj = createBsplineTable( obj, M, K )
+        function obj = createBsplineTable( obj, C, M, K )
             %--------------------------------------------------------------
             % Create a B-spline representation for each distributed
             % parameter
             %
-            % obj = obj.createBsplineArray( M, K, Names );
+            % obj = obj.createBsplineArray( C, M, K );
             %
             % Input Arguments:
             %
+            % C     --> (struct) Structure defining constraint properties
+            %                    with fields
+            %
+            %   Name        - (string) Name of factor
+            %   derivative  - set to 0,1 or 2 {0} to specify the spline
+            %                 derivative to which the constraint applies.
+            %   type        - set to '==','>=' or '<='
+            %   value       - constraint bound value
+            %   x           - x-ordinates at which constraints apply.
+            %                 Leave empty to specify all training
+            %                 x-ordinates.
             % M     --> (int8) Spline order (1 <= M <= 4)
             % K     --> (int8) Number of knots (1 <= K <= 7)
             %
@@ -508,6 +572,7 @@ classdef DoEgeneratorECOMO < handle
             %--------------------------------------------------------------
             arguments
                 obj (1,1)                   { mustBeNonempty( obj ) }
+                C   (1,:) struct
                 M   (:,1) int8  { mustBeGreaterThan(M,0), ...
                                   mustBeLessThan(M,5)} = 4;
                 K   (:,1) int8  { mustBeGreaterThan(K,0), ...
@@ -516,9 +581,8 @@ classdef DoEgeneratorECOMO < handle
             %--------------------------------------------------------------
             % Fetch names of distributed factors
             %--------------------------------------------------------------
-            D = ~obj.Factors{ :, "Fixed" };                                 % Point to distributed factors
-            RowNames = obj.Factors.Name( D );                               % Names of distributed factors
-            N = sum( D );
+            RowNames = obj.Factors.Name( obj.DistIdx );                     % Names of distributed factors
+            N = obj.NumDist;
             %--------------------------------------------------------------
             % Parse the spline data and create the necessary Bspline
             % objects.
@@ -534,12 +598,59 @@ classdef DoEgeneratorECOMO < handle
                 NumBasis = double( [B.nb].' );
                 NumKnots = double( [B.k].' );
                 NumPar = NumBasis + NumKnots;
-                obj.Bspline = table( B, NumBasis, NumKnots, NumPar );
-                obj.Bspline.Properties.RowNames = RowNames;
-                obj.Bspline.Properties.VariableNames = [ "Object",...
+                B = table( B, NumBasis, NumKnots, NumPar );
+                B.Properties.RowNames = RowNames;
+                B.Properties.VariableNames = [ "Object",...
                                  "NumBasis", "NumKnots", "NumPar"];
+                T = obj.parseBsplineConstraints( C );
+                obj.Bspline = horzcat( B, T );
             end
         end % createBsplineTable
+
+        function T = parseBsplineConstraints( obj, C )
+            %--------------------------------------------------------------
+            % Process any constraints to the Bspline table property
+            %
+            % T = obj.parseBsplineConstraints( C );
+            %
+            % Input Arguments:
+            %
+            % C     --> (struct) Structure defining constraint properties
+            %                    with fields
+            %
+            %   Name        - (string) Name of factor
+            %   derivative  - set to 0,1 or 2 {0} to specify the spline
+            %                 derivative to which the constraint applies.
+            %   type        - set to '==','>=' or '<='
+            %   value       - constraint bound value
+            %   x           - x-ordinates at which constraints apply.
+            %                 Leave empty to specify all training
+            %                 x-ordinates.
+            %--------------------------------------------------------------
+            if isempty( C )
+                C = obj.getDefaultConstraints();
+            end
+            Ok = all( obj.conFieldCheck( C ) );                         % Check necessary fields are present
+            assert( Ok, "Missing information for factor %s", C.name);   % Throw an error if there is missing information
+            %----------------------------------------------------------
+            % Parse the constraint information. Allow for multiple
+            % constraints being applicable to a given factor.
+            %----------------------------------------------------------
+            Names = string( obj.Factors.Name );
+            Names = Names( obj.DistIdx );
+            T = table( 'Size',  [ obj.NumDist, 1 ], ...
+                'VariableTypes', {'cell'} );
+            T.Properties.VariableNames = "Constraint";
+            T.Properties.RowNames = Names;
+            Cnames = string( { C(:).name } );
+            for Q = 1:numel( Names )
+                %----------------------------------------------------------
+                % Add the constraint structure to the table
+                %----------------------------------------------------------
+                Idx = contains( Cnames, Names( Q ), 'IgnoreCase', true );
+                T{ Names( Q ), 1 } = { C( Idx ) };
+            end %/Q
+        end % parseBsplineConstraints
 
         function T = parseFactor( obj, S )
             %--------------------------------------------------------------
@@ -557,12 +668,39 @@ classdef DoEgeneratorECOMO < handle
             %            Fixed - (logical) True if fixed factor. False
             %                    if distributed factor.
             %            Lo    - (double) Low natural limit for factor
-            %            Hi    - (double) High natural limit for factor
+            %            Hi    - (double) High natural limit for factor            
             %--------------------------------------------------------------
             Ok = all( obj.fieldCheck( S ) );                                % Check necessary fields are present
             assert( Ok, "Missing information for factor %s", S.Name);       % Throw an error if there is missing information
             T = struct2table( S );
         end % parseFactor
+
+        function Ok = conFieldCheck( obj, C )
+            %--------------------------------------------------------------
+            % Output logical value to indicate expected field is present.
+            %
+            % Ok = obj.conFieldCheck( C );
+            %
+            % C     --> (struct) Structure defining factor properties
+            %                    with expected fields:
+            %
+            %   Name  - (string) Name of factor
+            %   derivative  --> set to 0,1 or 2 {0} to specify the spline
+            %                   derivative to which the constraint applies.
+            %   type          --> set to '==','>=' or '<='
+            %   value         --> constraint bound value
+            %   x             --> x-ordinates at which constraints apply.
+            %                     Leave empty to specify all training
+            %                     x-ordinates.
+            %--------------------------------------------------------------
+            Ok = false( size( obj.ExpectCon ) );
+            F = fieldnames( C );
+            N = numel( obj.ExpectCon );
+            for Q = 1:N
+                Ok( Q ) = contains( obj.ExpectCon( Q ), F, "IgnoreCase",...
+                                                            true );
+            end                     
+        end % conFieldCheck
 
         function Ok = fieldCheck( obj, S )
             %--------------------------------------------------------------
@@ -590,6 +728,35 @@ classdef DoEgeneratorECOMO < handle
                     true );
             end
         end % fieldCheck
+
+        function C = getDefaultConstraints( obj )
+            %--------------------------------------------------------------
+            % Return constraints structure with defined fields all empty,
+            % except the name
+            %
+            % Default field names are:
+            %
+            %   name        - (string) Name of factor
+            %   derivative  - set to 0,1 or 2 {0} to specify the spline
+            %                 derivative to which the constraint applies.
+            %   type        - set to '==','>=' or '<='
+            %   value       - constraint bound value
+            %   x           - x-ordinates at which constraints apply.
+            %                 Leave empty to specify all training
+            %                 x-ordinates.
+            %--------------------------------------------------------------
+            Names = string( obj.Factors.Name( obj.DistIdx ) );
+            for Q = numel( Names ):-1:1
+                %----------------------------------------------------------
+                % Define the default constraint structure
+                %----------------------------------------------------------
+                C( Q ).name = Names( Q );
+                C( Q ).derivative = [];
+                C( Q ).type = [];
+                C( Q ).value = [];
+                C( Q ).x = [];
+            end
+        end % getDefaultConstraints
     end % protected methods
 
     methods ( Access = private )
