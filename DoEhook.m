@@ -215,7 +215,7 @@ classdef DoEhook < handle
             %
             % Src --> Event source object (ecomoInterface object).
             %--------------------------------------------------------------
-            S = obj.Lh.Source{ : };
+            S = obj.DesObj;
             S = S.addDesignPoint( Src.B.Xnext );   
             obj.Design = S.Design;
             Simulated = [ obj.ParTable.Simulated; false ];

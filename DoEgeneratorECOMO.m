@@ -187,7 +187,13 @@ classdef DoEgeneratorECOMO < handle
                     NumCon = max( size( C ) );
                     B = obj.Bspline{ Name, "Object" };                      % retrieve the spline object
                     Kidx = obj.DesignInfo{ Name, "Knots" };                 % retrieve the knots
-                    Cidx = obj.DesignInfo{ Name, "Coefficients" }{:};       % retrieve the coefficients
+                    if iscell( Kidx )
+                        Kidx = Kidx{ : };
+                    end
+                    Cidx = obj.DesignInfo{ Name, "Coefficients" };          % retrieve the coefficients
+                    if iscell( Cidx )
+                        Cidx = Cidx{ : };
+                    end
                     %------------------------------------------------------
                     % Decode knots and coeffcients
                     %------------------------------------------------------
@@ -205,12 +211,8 @@ classdef DoEgeneratorECOMO < handle
                             Y = B.calcDerivative( X, C( QQ ).derivative );
                             Type = string( C( QQ ).type );
                             switch Type
-                                case ">"
-                                    Ok( R ) = all( Y > C( QQ ).value );
                                 case { ">=", "=>" }
                                     Ok( R ) = all( Y >= C( QQ ).value );
-                                case "<"
-                                    Ok( R ) = all( Y < C( QQ ).value );
                                 case { "<=", "=<" }
                                     Ok( R ) = all( Y <= C( QQ ).value );
                                 otherwise
