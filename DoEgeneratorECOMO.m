@@ -179,7 +179,8 @@ classdef DoEgeneratorECOMO < handle
                 %----------------------------------------------------------
                 Q = N( I );
                 C = obj.Bspline.Constraint{ Q };
-                if ~isempty( C )
+                applyConstraint = ( ~isempty( C ) && ~isempty( C.type ) );
+                if applyConstraint
                     Name = C.name;
                     %------------------------------------------------------
                     % Parse the constraint and evaluate the derivative
@@ -783,7 +784,7 @@ classdef DoEgeneratorECOMO < handle
             if iscell( B )
                 B = B{ : };
             end
-            Coeff =  ( B - A ) .* Coeffc +  A;
+            Coeff =  ( B - A ) .* Coeffc +  A; 
         end % decodeSplineCoeff
 
         function [ Out, Finish ] = parseDistributed( obj, Name, Finish )
