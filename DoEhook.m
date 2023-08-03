@@ -234,7 +234,7 @@ classdef DoEhook < handle
             % Src --> Event source object.
             %--------------------------------------------------------------
             Didx = Src.DistIdx;
-            Fnames = string( Src.Factors.Name );
+            Fnames = string( Src.Factors.Properties.RowNames );
             Npts = Src.NumPoints;
             VarTypes = obj.createVarTypes( Didx );
             T = table( 'Size', [ Npts, numel( VarTypes ) ],...
@@ -327,10 +327,17 @@ classdef DoEhook < handle
             % RunNumber --> Current experimental design run
             %--------------------------------------------------------------
             Info = Src.DesignInfo( Name, : );
-            Idx = contains( Src.Factors.Name, Name );
+            Idx = matches( Src.Factors.Properties.RowNames, Name );
             Sz = Src.Factors.Sz( Idx, : );
+            %--------------------------------------------------------------
+            % Retrieve Low and High input limits & define lookup table 
+            % input vector
+            %--------------------------------------------------------------
+            B = Src.Bspline.Object( Idx );
+            Lo = B.a;
+            Hi = B.b;
             LookUp = zeros( Sz );
-            LookUp( 1,: ) = linspace( 0, Src.TubeLength, max( Sz ) );       % Tube axial dimension to evaluate spline
+            LookUp( 1,: ) = linspace( Lo, Hi, max( Sz ) );                  % inputs at which to evaluate spline
             %--------------------------------------------------------------
             % Point to the columns in the design table defining the spline
             % parameters
@@ -353,7 +360,13 @@ classdef DoEhook < handle
             %--------------------------------------------------------------
             Y = Src.evalSpline( LookUp( 1,: ), Name, Coeff, Knot );
             LookUp( 2,: ) = reshape( Y, 1, numel( Y ) );
-            LookUp( 1,: ) = 0.001 * LookUp( 1,: );                          % Convert to [m] for simulation
+            InputVar = Src.Bspline{ Name, "Xname" };
+            if matches( InputVar, "x", 'IgnoreCase', true)
+                %----------------------------------------------------------
+                % Convert to [m] for simulation
+                %----------------------------------------------------------
+                LookUp( 1,: ) = 0.001 * LookUp( 1,: );       
+            end
             LookUp = LookUp.';
         end
     end % private methods

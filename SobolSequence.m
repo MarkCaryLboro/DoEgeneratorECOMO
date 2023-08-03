@@ -5,49 +5,58 @@ classdef SobolSequence < DoEgeneratorECOMO
     % Optimisation.
     %----------------------------------------------------------------------
     methods
-        function obj = SobolSequence( Factors, Con, Opts )
+        function obj = SobolSequence( Factors, Con )
             %--------------------------------------------------------------
             % Class constructor
             %
-            % obj = SobolSequence( Factors );
+            % obj = SobolSequence( Factors, Con );
             %
             % Input Arguments:
             %
-            % Factors   --> (struct) Structure defining factor properties
-            %               with fields:
+            % Factors --> (struct) Multidimensional Structure defining factor 
+            %                      properties with fields:
             %
-            %               Name  - (string) Name of factor
-            %               Units - (string) Factor units
-            %               Fixed - (logical) True if fixed factor. False
-            %                       if distributed factor.
-            %               Lo    - (double) Low natural limit for factor
-            %               Hi    - (double) High natural limit for factor
+            %             Name   - (string) Name of factor
+            %             Units  - (string) Factor units
+            %             Fixed  - (logical) True if fixed factor. False
+            %                      if distributed factor.
+            %             Lo     - (double) Low natural limit for factor
+            %             Hi     - (double) High natural limit for factor
+            %             Sz     - (int64) Size of corresponding lookup
+            %                      table (only for distributed parameters).
+            %                      Set to [ 1, 1 ] if the factor is fixed.
+            %             Type   - (string) Set to "Parameter" to denote am 
+            %                      identifable coefficient of "Boundary" to
+            %                      denote a boundary condition.
+            %             Spline - (struct) configuration for a distributed
+            %                      parameter, with fields:
             %
-            % 
-            % Optional Arguments:
-            % 
-            % Name   --> (string), may be either "M" for spline order or
-            %            "K" for number of knots.
-            % Value -->  (double) If a scaler, then all distributed
-            %            parameters will be assigned the same order or 
-            %            number of knots. If a vector, with elements equal 
-            %            to the number of distributed factors, then each 
-            %            distributed factor is assigned a unique order or 
-            %            number of knots respectively.
+            %                      X   - (string) Input factor name(s)
+            %                      M   - (int8) Spline 
+            %                      K   - (cell)
+            %                      Xlo - (double) Low limit(s) for 
+            %                            x-factor(s) range
+            %                      Xhi - (double) High limit(s) for 
+            %                            x-factor(s) range
+            % Con   --> (struct) Structure defining constraint properties
+            %                    with fields
             %
-            % Examples: obj = SobolSequence( Factors, "M", 4, "K", 2 )
-            %           obj = SobolSequence( Factors, "M", [3, 4], "K", 2 )
-            %           obj = SobolSequence( Factors, "K", [2, 3], "M", 4 )
+            %   Name        - (string) Name of factor
+            %   derivative  - set to 0,1 or 2 {0} to specify the spline
+            %                 derivative to which the constraint applies.
+            %   type        - set to '==','>=' or '<='
+            %   value       - constraint bound value
+            %   x           - x-ordinates at which constraints apply.
+            %                 Leave empty to specify all training
+            %                 x-ordinates.
+            %
             %--------------------------------------------------------------
             arguments
-                Factors (1,:) struct    
-                Con     (1,:) struct
-                Opts.M  (:,1) int8      = 4
-                Opts.K  (:,1) int8      = 2
+                Factors (1,:) struct  { mustBeNonempty( Factors ) }  
+                Con     (1,:) struct  = struct.empty;
             end
             if nargin > 0 && all( obj.fieldCheck( Factors ) )
-                obj = obj.addFactor( Factors, Con, "K", Opts.K,...
-                                                   "M", Opts.M );
+                obj = obj.addFactor( Factors, Con );
             else
                 warning( "Missing fields in input structure" );
             end
@@ -67,14 +76,17 @@ classdef SobolSequence < DoEgeneratorECOMO
             %
             % Optional Arguments:
             %
-            % "
+            % Leap      --> First sample in Sobol sequence. Set this to a
+            %               big prime number.
+            % Skip      --> Sample rate in sequence. Set to a prime number
+            % Scramble  --> Set this to true if scrambled sequence is
+            %               required (recommended)
             %--------------------------------------------------------------
             arguments
                 obj           (1,1)   SobolSequence
                 N             (1,1)   int64        { mustBePositive( N ) } = 101;
                 Opts.Leap     (1,1)   double       = max( primes( 7301 ) );
                 Opts.Skip     (1,1)   double       = max( primes( 49 ) );
-                Opts.Con      (1,1)   logical      = true
                 Opts.Scramble (1,1)   logical      = false
             end
             obj = obj.clearDesign();
@@ -96,7 +108,9 @@ classdef SobolSequence < DoEgeneratorECOMO
                 obj.Scramble = true;
             end
             %--------------------------------------------------------------
-            if Opts.Con
+            % Apply constraints if defined
+            %--------------------------------------------------------------
+            if obj.Constrained
                 %----------------------------------------------------------
                 % Identify feasible combinations for the distributed
                 % factors
