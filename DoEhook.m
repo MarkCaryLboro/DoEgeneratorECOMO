@@ -13,7 +13,6 @@ classdef DoEhook < handle
     properties ( SetAccess = protected)
         Lh          (1,1)                                                   % Listener handle for DESIGN_AVAILABLE event
         Uh          (1,1)                                                   % Listener handle for UPDATE event
-        ConfigFile  (1,1) string                                            % ECOMO model configuration file
         ParTable    (:,:) table                                             % Parameter table in engineering units
         TubeLength  (1,1) double                                            % Length of the tube [mm]
         TubeIntDia  (1,1) double                                            % Clean inner diameter of tube [mm]
@@ -30,28 +29,28 @@ classdef DoEhook < handle
         NumPoints   (1,1) int64                                             % Number of points in the design
     end % dependent properties
 
-    methods
-        function obj = DoEhook()
-            %--------------------------------------------------------------
-            % Define the DoEhook to listen for and process the 
-            % DESIGN_AVAILABLE and UPDATE events
-            %
-            % obj = DoEhook();
-            %--------------------------------------------------------------
-
-            %--------------------------------------------------------------
-            % Capture the configuration file for the ECOMO model
-            %--------------------------------------------------------------
-            [ File, Path ] = uigetfile(".m","Select ECOMO model configuration function", "initialization_for_foulingModel.m", "MultiSelect","off");
-            obj.ConfigFile = fullfile( Path, File );
-            [ ~, obj.ConfigFile, ~ ] = fileparts( obj.ConfigFile );
-            Ok = true;
-            if ( File == 0 )
-                Ok = false;
-            end
-            assert( Ok, "Must select ECOMO model configuration file!" );
-        end % DoEhook
-    end % Constructor method
+%     methods
+%         function obj = DoEhook()
+%             %--------------------------------------------------------------
+%             % Define the DoEhook to listen for and process the 
+%             % DESIGN_AVAILABLE and UPDATE events
+%             %
+%             % obj = DoEhook();
+%             %--------------------------------------------------------------
+% 
+%             %--------------------------------------------------------------
+%             % Capture the configuration file for the ECOMO model
+%             %--------------------------------------------------------------
+%             [ File, Path ] = uigetfile(".m","Select ECOMO model configuration function", "initialization_for_foulingModel.m", "MultiSelect","off");
+%             obj.ConfigFile = fullfile( Path, File );
+%             [ ~, obj.ConfigFile, ~ ] = fileparts( obj.ConfigFile );
+%             Ok = true;
+%             if ( File == 0 )
+%                 Ok = false;
+%             end
+%             assert( Ok, "Must select ECOMO model configuration file!" );
+%         end % DoEhook
+%     end % Constructor method
 
     methods
         function obj = addDesignAvailableListener( obj, Src )
