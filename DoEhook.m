@@ -13,7 +13,6 @@ classdef DoEhook < handle
     properties ( SetAccess = protected)
         Lh          (1,1)                                                   % Listener handle for DESIGN_AVAILABLE event
         Uh          (1,1)                                                   % Listener handle for UPDATE event
-        ConfigFile  (1,1) string                                            % ECOMO model configuration file
         ParTable    (:,:) table                                             % Parameter table in engineering units
         TubeLength  (1,1) double                                            % Length of the tube [mm]
         TubeIntDia  (1,1) double                                            % Clean inner diameter of tube [mm]
@@ -23,33 +22,35 @@ classdef DoEhook < handle
         DistIdx     (1,:) logical                                           % Logical index to distributed parameters
         Design      (:,:) double                                            % Durrent experimental design in engineering units
         Type        (1,:) string                                            % String array of variable types (Parameter or Boundary)
+        DesObj      (1,1)                                                   % Experimental design object
     end % Protected properties
 
     properties ( SetAccess = protected, Dependent = true )
         NumPoints   (1,1) int64                                             % Number of points in the design
     end % dependent properties
 
-    methods
-        function obj = DoEhook()
-            %--------------------------------------------------------------
-            % Define the DoEhook to listen for and process the 
-            % DESIGN_AVAILABLE and UPDATE events
-            %
-            % obj = DoEhook();
-            %--------------------------------------------------------------
-
-            %--------------------------------------------------------------
-            % Capture the configuration file for the ECOMO model
-            %--------------------------------------------------------------
-            [ File, Path ] = uigetfile(".m","Select ECOMO model configuration file", "MultiSelect","off");
-            obj.ConfigFile = fullfile( Path, File );
-            Ok = true;
-            if ( File == 0 )
-                Ok = false;
-            end
-            assert( Ok, "Must select ECOMO model configuration file!" );
-        end % DoEhook
-    end % Constructor method
+%     methods
+%         function obj = DoEhook()
+%             %--------------------------------------------------------------
+%             % Define the DoEhook to listen for and process the 
+%             % DESIGN_AVAILABLE and UPDATE events
+%             %
+%             % obj = DoEhook();
+%             %--------------------------------------------------------------
+% 
+%             %--------------------------------------------------------------
+%             % Capture the configuration file for the ECOMO model
+%             %--------------------------------------------------------------
+%             [ File, Path ] = uigetfile(".m","Select ECOMO model configuration function", "initialization_for_foulingModel.m", "MultiSelect","off");
+%             obj.ConfigFile = fullfile( Path, File );
+%             [ ~, obj.ConfigFile, ~ ] = fileparts( obj.ConfigFile );
+%             Ok = true;
+%             if ( File == 0 )
+%                 Ok = false;
+%             end
+%             assert( Ok, "Must select ECOMO model configuration file!" );
+%         end % DoEhook
+%     end % Constructor method
 
     methods
         function obj = addDesignAvailableListener( obj, Src )
@@ -153,6 +154,10 @@ classdef DoEhook < handle
             Ok = contains( "DESIGN_AVAILABLE", Ename );
             assert( Ok, 'Not processing the %s event supplied', Ename );
             %--------------------------------------------------------------
+            % Save the SobolSequence object
+            %--------------------------------------------------------------
+            obj.DesObj = Src;
+            %--------------------------------------------------------------
             % Set geometric parameters
             %--------------------------------------------------------------
             obj.TubeIntDia = Src.TubeIntDia / 1000;                         % convert to [m]
@@ -209,7 +214,7 @@ classdef DoEhook < handle
             %
             % Src --> Event source object (ecomoInterface object).
             %--------------------------------------------------------------
-            S = obj.Lh.Source{ : };
+            S = obj.DesObj;
             S = S.addDesignPoint( Src.B.Xnext );   
             obj.Design = S.Design;
             Simulated = [ obj.ParTable.Simulated; false ];
@@ -228,7 +233,7 @@ classdef DoEhook < handle
             % Src --> Event source object.
             %--------------------------------------------------------------
             Didx = Src.DistIdx;
-            Fnames = string( Src.Factors.Name );
+            Fnames = string( Src.Factors.Properties.RowNames );
             Npts = Src.NumPoints;
             VarTypes = obj.createVarTypes( Didx );
             T = table( 'Size', [ Npts, numel( VarTypes ) ],...
@@ -321,10 +326,17 @@ classdef DoEhook < handle
             % RunNumber --> Current experimental design run
             %--------------------------------------------------------------
             Info = Src.DesignInfo( Name, : );
-            Idx = contains( Src.Factors.Name, Name );
+            Idx = matches( Src.Factors.Properties.RowNames, Name );
             Sz = Src.Factors.Sz( Idx, : );
+            %--------------------------------------------------------------
+            % Retrieve Low and High input limits & define lookup table 
+            % input vector
+            %--------------------------------------------------------------
+            B = Src.Bspline.Object( Idx );
+            Lo = B.a;
+            Hi = B.b;
             LookUp = zeros( Sz );
-            LookUp( 1,: ) = linspace( 0, Src.TubeLength, max( Sz ) );       % Tube axial dimension to evaluate spline
+            LookUp( 1,: ) = linspace( Lo, Hi, max( Sz ) );                  % inputs at which to evaluate spline
             %--------------------------------------------------------------
             % Point to the columns in the design table defining the spline
             % parameters
@@ -347,14 +359,14 @@ classdef DoEhook < handle
             %--------------------------------------------------------------
             Y = Src.evalSpline( LookUp( 1,: ), Name, Coeff, Knot );
             LookUp( 2,: ) = reshape( Y, 1, numel( Y ) );
-            LookUp( 1,: ) = 0.001 * LookUp( 1,: );                          % Convert to [m] for simulation
-            %--------------------------------------------------------------
-            % Transpose if a Boundary Condition
-            %--------------------------------------------------------------
-%             if contains( Src.Factors.Type( Idx ), "Boundary" )
-% %                 LookUp = LookUp.';
-%             end
-             LookUp = LookUp.';
+            InputVar = Src.Bspline{ Name, "Xname" };
+            if matches( InputVar, "x", 'IgnoreCase', true)
+                %----------------------------------------------------------
+                % Convert to [m] for simulation
+                %----------------------------------------------------------
+                LookUp( 1,: ) = 0.001 * LookUp( 1,: );       
+            end
+            LookUp = LookUp.';
         end
     end % private methods
 end % DoEhook
