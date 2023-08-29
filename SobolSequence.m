@@ -97,7 +97,7 @@ classdef SobolSequence < DoEgeneratorECOMO
             D = cellfun( @max, D );
             D = max( D( : ) );                                              % Nan is ignored.
             %--------------------------------------------------------------
-            % Now create the design
+            % Now create the sobol set
             %--------------------------------------------------------------
             P = sobolset( D, "Leap", Opts.Leap, "Skip", Opts.Skip );
             if Opts.Scramble
@@ -106,7 +106,7 @@ classdef SobolSequence < DoEgeneratorECOMO
                 %----------------------------------------------------------
                 P = scramble( P, 'MatousekAffineOwen' );
                 obj.Scramble = true;
-            end
+            end 
             %--------------------------------------------------------------
             % Apply constraints if defined
             %--------------------------------------------------------------

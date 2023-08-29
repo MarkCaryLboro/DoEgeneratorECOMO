@@ -626,9 +626,9 @@ classdef DoEgeneratorECOMO < handle
             %----------------------------------------------------------
             Names = string( obj.Factors.Properties.RowNames );
             Names = Names( obj.DistIdx );
-            T = table( 'Size',  [ obj.NumDist, 1 ], ...
-                'VariableTypes', {'cell'} );
-            T.Properties.VariableNames = "Constraint";
+            T = table( 'Size',  [ obj.NumDist, 2 ], ...
+                'VariableTypes', {'cell', 'logical'} );
+            T.Properties.VariableNames = [ "Constraint", "Constrained" ];
             T.Properties.RowNames = Names;
             Cnames = string( { C(:).name } );
             for Q = 1:numel( Names )
@@ -636,7 +636,8 @@ classdef DoEgeneratorECOMO < handle
                 % Add the constraint structure to the table
                 %----------------------------------------------------------
                 Idx = matches( Cnames, Names( Q ) );
-                T{ Names( Q ), 1 } = { C( Idx ) };
+                Con = ~isempty( C( Idx ) );
+                T( Names( Q ), : ) = cell2table( { { C( Idx ) }, Con });
             end %/Q
         end % parseBsplineConstraints
 
