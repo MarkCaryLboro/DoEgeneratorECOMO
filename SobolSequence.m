@@ -4,6 +4,11 @@ classdef SobolSequence < DoEgeneratorECOMO
     % for the ECOMO model identification approach using Bayesian 
     % Optimisation.
     %----------------------------------------------------------------------
+    properties ( SetAccess = protected )
+        Leap        (1,1) double    = max( primes( 7301 ) )
+        Skip        (1,1) double    = max( primes( 49 ) )
+    end % protected methods
+
     methods
         function obj = SobolSequence( Factors, Con )
             %--------------------------------------------------------------
@@ -72,7 +77,7 @@ classdef SobolSequence < DoEgeneratorECOMO
             %
             % Input Arguments:
             %
-            % N     --> (int64) Number of design loints.
+            % N     --> (int64) Number of design points.
             %
             % Optional Arguments:
             %
@@ -84,9 +89,9 @@ classdef SobolSequence < DoEgeneratorECOMO
             %--------------------------------------------------------------
             arguments
                 obj           (1,1)   SobolSequence
-                N             (1,1)   int64        { mustBePositive( N ) } = 101;
-                Opts.Leap     (1,1)   double       = max( primes( 7301 ) );
-                Opts.Skip     (1,1)   double       = max( primes( 49 ) );
+                N             (1,1)   int64        { mustBePositive( N ) } = 101
+                Opts.Leap     (1,1)   double       = obj.Leap
+                Opts.Skip     (1,1)   double       = obj.Skip
                 Opts.Scramble (1,1)   logical      = false
             end
             obj = obj.clearDesign();
@@ -99,7 +104,9 @@ classdef SobolSequence < DoEgeneratorECOMO
             %--------------------------------------------------------------
             % Now create the sobol set
             %--------------------------------------------------------------
-            P = sobolset( D, "Leap", Opts.Leap, "Skip", Opts.Skip );
+            obj.Leap = Opts.Leap;
+            obj.Skip = Opts.Skip;
+            P = sobolset( D, "Leap", obj.Leap, "Skip", obj.Skip );
             if Opts.Scramble
                 %----------------------------------------------------------
                 % Scramble the design
@@ -115,8 +122,7 @@ classdef SobolSequence < DoEgeneratorECOMO
                 % Identify feasible combinations for the distributed
                 % factors
                 %----------------------------------------------------------
-                Des = net( P, N );                                          % Coded on interval [ 0,1 ]
-                Des = obj.applyConstraints( N, Des );                       % Retain only feasible combinations 
+                Des = obj.applyConstraints( N, P );                         % Retain only feasible combinations 
                 obj.NumPoints_ = size( Des, 1 );
             else
                 obj.NumPoints_ = N;
@@ -131,4 +137,110 @@ classdef SobolSequence < DoEgeneratorECOMO
             obj.ExportReady = true;
         end % generate
     end % concrete abstract method signatures
+
+    methods 
+        function V = evalSplineConstraint( obj, S, Sz, N )
+            %--------------------------------------------------------------
+            % Evaluate the specified constraints for a specific factor &
+            % return the feasible points
+            %
+            % V =  obj.evalSplineConstraint( S, Sz, N );
+            %
+            % Input Arguments:
+            %
+            % S     --> (struct) spline constraint definition structure
+            % Sz    --> (int64) Desired design size
+            % N     --> (int64) number of points to evaluate spline
+            %           constraint at.
+            %--------------------------------------------------------------
+            arguments
+                obj (1,1) SobolSequence { mustBeNonempty( obj ) }
+                S   (:,:) struct        { mustBeNonempty( S ) }
+                Sz  (1,1) int64         { mustBeNonempty( Sz ) }
+                N   (1,1) int64         { mustBeNonempty( N ) } = 101
+            end
+            NumCon = max( size( S ) );                                      % Number of constraints
+            Name = string( S.name );                                        % Factor name
+            %--------------------------------------------------------------
+            % Loop through all the constraints
+            %--------------------------------------------------------------
+            for Icon = 1:NumCon
+                %----------------------------------------------------------
+                % Fetch the B-spline object
+                %----------------------------------------------------------
+                B = obj.Bspline{ Name, "Object" };
+                %----------------------------------------------------------
+                % Create the evaluation vector (spline input)
+                %----------------------------------------------------------
+                X = linspace( B.a, B.b, N ).';
+                %----------------------------------------------------------
+                % Determine the number of parameters & establish pointers
+                %----------------------------------------------------------
+                D = B.nb + B.k;
+                Cidx = 1:B.nb;
+                Kidx = 1:B.k;
+                %----------------------------------------------------------
+                % Create a seperate Sobol set for the constrained variable
+                %----------------------------------------------------------
+                P = sobolset( D, "Leap", obj.Leap, "Skip", obj.Skip );
+                if obj.Scramble
+                    % Apply a scramble if specified
+                    P = scramble( P, 'MatousekAffineOwen' );
+                end
+                Counter = 0;
+                Finish = 0;
+                %----------------------------------------------------------
+                %  Generate a constrained design
+                %----------------------------------------------------------
+                Dx = S.derivative;
+                Type = S.type;
+                Val = S.value;
+                while ( Finish < Sz ) || ( Counter > 10 * Sz )
+                    Counter = Counter + 1;
+                    %------------------------------------------------------
+                    % Generate a design & decode the parameters
+                    %------------------------------------------------------
+                    Des = net( P, Sz );                                     % Coded on interval [ 0,1 ]
+                    Coeff = obj.decodeSplineCoeff( Name, Des( :,Cidx) );
+                    Knot = B.decode( Des( :, Kidx ) );
+                    %------------------------------------------------------
+                    % Initialise feasible design point pointer
+                    %------------------------------------------------------
+                    Ptr = false( Sz, 1 );
+                    for Idx = 1:Sz
+                        %--------------------------------------------------
+                        % Evaluate the spline constraint for each point in
+                        % the design
+                        %--------------------------------------------------
+                        B.alpha = Coeff( Idx, : );
+                        B.n = Knot( Idx, : );
+                        C = B.calcDerivative( X, Dx );
+                        switch Type
+                            case { ">=", "=>" }
+                                Feasible = ( C >= Val );
+                            case { "<=", "=<"}
+                                Feasible = ( C <= Val );
+                            case "=="
+                                Feasible = ( C == Val );
+                            otherwise
+                                Msg = 'Unrecognised constraint type "%s"';
+                                error( Msg, Type );
+                        end
+                        if all( Feasible )
+                            %----------------------------------------------
+                            % Add a feasible point to the design
+                            %----------------------------------------------
+                            Ptr( Idx ) = true;
+                        end
+                    end %/Idx
+                    Start = Finish + 1;
+                    Finish = Start + sum( Ptr ) - 1;
+                    V ( Start:Finish, ( 1:D ) ) = Des( Ptr, : );
+                    if rem( Counter, 10) == 0
+                        fprintf( '\nCounter = %5.0f', Counter );
+                    end
+                end %/while
+            end %/Icon
+        end % evalSplineConstraint
+    end % ordinary methods
 end % SobolSequence
