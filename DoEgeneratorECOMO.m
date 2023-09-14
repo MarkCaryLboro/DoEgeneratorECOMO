@@ -160,12 +160,7 @@ classdef DoEgeneratorECOMO < handle
             %--------------------------------------------------------------
             % Generate an unconstrained design to begin with
             %--------------------------------------------------------------
-            U = net( P, Sz );
-            %--------------------------------------------------------------
-            % Point to the distributed factors
-            %--------------------------------------------------------------
-            N = 1:obj.NumFactors;
-            N = N( obj.DistIdx );
+            D = net( P, Sz );
             %--------------------------------------------------------------
             % Point to the constrained parameters
             %--------------------------------------------------------------
@@ -184,88 +179,15 @@ classdef DoEgeneratorECOMO < handle
                 if iscell( S )
                     S = S{ : };
                 end
-                V = obj.evalSplineConstraint( S, Sz, 101 );
-
-
+                V = obj.evalSplineConstraint( Name, S, Sz, 101 );
+                %----------------------------------------------------------
+                % Add constrained points to the design
+                %----------------------------------------------------------
+                [ Cidx, Kidx ] = obj.getParameterPointers( Name );
+                Start = min( Cidx );
+                Finish = max( Kidx );
+                D( :, Start:Finish ) = V;
             end % /Q
-            if isempty( S.X )
-                % Axially distributed parameter
-                X = linspace( 0, obj.TubeLength, 101 );                     % Define axial dimension for spline evaluation
-            else
-                % Arbitrary input
-            end
-            ConCounter = 0;
-            for I = 1:numel( N )
-                %----------------------------------------------------------
-                % Evaluate the necessary spline derivatives
-                %
-                % 1. Parse the constraint
-                % 2. Extract knots and decode
-                % 3. Evaluate spline derivative constraint
-                %----------------------------------------------------------
-                Q = N( I );
-                C = obj.Bspline.Constraint{ Q };
-                applyConstraint = ( ~isempty( C ) && ~isempty( C.type ) );
-                if applyConstraint
-                    Name = C.name;
-                    %------------------------------------------------------
-                    % Parse the constraint and evaluate the derivative
-                    %------------------------------------------------------
-                    NumCon = max( size( C ) );
-                    B = obj.Bspline{ Name, "Object" };                      % retrieve the spline object
-                    Kidx = obj.DesignInfo{ Name, "Knots" };                 % retrieve the knots
-                    if iscell( Kidx )
-                        Kidx = Kidx{ : };
-                    end
-                    Cidx = obj.DesignInfo{ Name, "Coefficients" };          % retrieve the coefficients
-                    if iscell( Cidx )
-                        Cidx = Cidx{ : };
-                    end
-                    %------------------------------------------------------
-                    % Decode knots and coeffcients
-                    %------------------------------------------------------
-                    K = sort( B.decode( Des( :,Kidx ) ), 2 );
-                    Co = obj.decodeSplineCoeff( Name, Des( :, Cidx ) );
-                    for QQ = 1:NumCon
-                        ConCounter = ConCounter + 1;
-                        Ok = false( size( Des( :, 1 ) ) );
-                        for R = 1:size( Des, 1 )
-                            %----------------------------------------------
-                            % Evaluate the spline derivative constraint
-                            %----------------------------------------------
-                            B.n = K( R, : );
-                            B.alpha = Co( R, : );
-                            Y = B.calcDerivative( X, C( QQ ).derivative );
-                            Type = string( C( QQ ).type );
-                            switch Type
-                                case { ">=", "=>" }
-                                    Ok( R ) = all( Y >= C( QQ ).value );
-                                case { "<=", "=<" }
-                                    Ok( R ) = all( Y <= C( QQ ).value );
-                                otherwise
-                                    Ok( R ) = all( Y == C( QQ ).value );
-                            end
-                        end
-                        Idx( :, ConCounter ) = Ok;
-                    end % /QQ
-                end
-            end % /I
-            %--------------------------------------------------------------
-            % Now select the valid design points
-            %--------------------------------------------------------------
-            Idx = all( Idx, 2 );
-            NumFeasible = sum( Idx );
-            if ( NumFeasible > Sz )
-                % Too many feasible points
-                D = Des( 1:Sz, : );
-            elseif ( NumFeasible == 0 )
-                % No feasible points, so just return a design of the right
-                % size.
-                D = Des( 1:Sz, : );
-            else
-                % Return a feasible design
-                D = Des( Idx, : );
-            end
         end % applyConstraints
 
         function Y = evalSpline( obj, X, Name, Coeff, Knot )
@@ -800,9 +722,7 @@ classdef DoEgeneratorECOMO < handle
             end
             Coeff =  ( B - A ) .* Coeffc +  A; 
         end % decodeSplineCoeff
-    end % protected methods
 
-    methods ( Access = private )
         function [ Cidx, Kidx ] = getParameterPointers( obj, Name )
             %--------------------------------------------------------------
             % Return pointers to the coefficient and knot locations in the
@@ -830,8 +750,10 @@ classdef DoEgeneratorECOMO < handle
             if iscell( Cidx )
                 Cidx = Cidx{ : };
             end
-        end
+        end % getParameterPointers
+    end % protected methods
 
+    methods ( Access = private )
         function [ Out, Finish ] = parseDistributed( obj, Name, Finish )
             %--------------------------------------------------------------
             % Output a cell array of dimension {1,2}. First cell contains

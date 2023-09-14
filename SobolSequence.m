@@ -139,46 +139,51 @@ classdef SobolSequence < DoEgeneratorECOMO
     end % concrete abstract method signatures
 
     methods 
-        function V = evalSplineConstraint( obj, S, Sz, N )
+        function V = evalSplineConstraint( obj, Name, S, Sz, N )
             %--------------------------------------------------------------
-            % Evaluate the specified constraints for a specific factor &
-            % return the feasible points
+            % Return a constrained design of the appropriate size for a 
+            % single distributed factor. All constraints applied to a
+            % factor will be satisfied.
             %
             % V =  obj.evalSplineConstraint( S, Sz, N );
             %
             % Input Arguments:
             %
+            % Name  --> (string) name of constrained factor
             % S     --> (struct) spline constraint definition structure
             % Sz    --> (int64) Desired design size
             % N     --> (int64) number of points to evaluate spline
             %           constraint at.
             %--------------------------------------------------------------
             arguments
-                obj (1,1) SobolSequence { mustBeNonempty( obj ) }
-                S   (:,:) struct        { mustBeNonempty( S ) }
-                Sz  (1,1) int64         { mustBeNonempty( Sz ) }
-                N   (1,1) int64         { mustBeNonempty( N ) } = 101
+                obj     (1,1) SobolSequence { mustBeNonempty( obj ) }
+                Name    (1,1) string        { mustBeNonempty( Name ) }
+                S       (:,:) struct        { mustBeNonempty( S ) }
+                Sz      (1,1) int64         { mustBeNonempty( Sz ) }
+                N       (1,1) int64         { mustBeNonempty( N ) } = 101
             end
             NumCon = max( size( S ) );                                      % Number of constraints
-            Name = string( S.name );                                        % Factor name
             %--------------------------------------------------------------
-            % Loop through all the constraints
+            % Fetch the B-spline object
             %--------------------------------------------------------------
-            for Icon = 1:NumCon
-                %----------------------------------------------------------
-                % Fetch the B-spline object
-                %----------------------------------------------------------
-                B = obj.Bspline{ Name, "Object" };
-                %----------------------------------------------------------
-                % Create the evaluation vector (spline input)
-                %----------------------------------------------------------
-                X = linspace( B.a, B.b, N ).';
-                %----------------------------------------------------------
-                % Determine the number of parameters & establish pointers
-                %----------------------------------------------------------
-                D = B.nb + B.k;
-                Cidx = 1:B.nb;
-                Kidx = 1:B.k;
+            B = obj.Bspline{ Name, "Object" };
+            %--------------------------------------------------------------
+            % Create the evaluation vector (spline input)
+            %--------------------------------------------------------------
+            X = linspace( B.a, B.b, N ).';
+            %--------------------------------------------------------------
+            % Determine the number of parameters & establish pointers
+            %--------------------------------------------------------------
+            D = B.nb + B.k;
+            Cidx = 1:B.nb;
+            Kidx = ( B.nb + 1 ):( B.nb + B.k ); 
+            V = zeros( Sz, D );
+            Finish = 0;
+            %--------------------------------------------------------------
+            %  Generate a constrained design
+            %--------------------------------------------------------------
+            W = waitbar( 0, "Selecting Feasible Points");
+            while ( Finish < Sz )
                 %----------------------------------------------------------
                 % Create a seperate Sobol set for the constrained variable
                 %----------------------------------------------------------
@@ -187,60 +192,60 @@ classdef SobolSequence < DoEgeneratorECOMO
                     % Apply a scramble if specified
                     P = scramble( P, 'MatousekAffineOwen' );
                 end
-                Counter = 0;
-                Finish = 0;
                 %----------------------------------------------------------
-                %  Generate a constrained design
+                % Generate a design & decode the parameters
                 %----------------------------------------------------------
-                Dx = S.derivative;
-                Type = S.type;
-                Val = S.value;
-                while ( Finish < Sz ) || ( Counter > 10 * Sz )
-                    Counter = Counter + 1;
+                Des = net( P, Sz );                                         % Coded on interval [ 0,1 ]
+                Coeff = obj.decodeSplineCoeff( Name, Des( :,Cidx) );
+                Knot = B.decode( Des( :, Kidx ) );
+                %----------------------------------------------------------
+                % Initialise feasible design point pointer
+                %----------------------------------------------------------
+                Ptr = false( Sz, 1 );
+                for Idx = 1:Sz
                     %------------------------------------------------------
-                    % Generate a design & decode the parameters
+                    % Evaluate the spline constraint for each point in
+                    % the design
                     %------------------------------------------------------
-                    Des = net( P, Sz );                                     % Coded on interval [ 0,1 ]
-                    Coeff = obj.decodeSplineCoeff( Name, Des( :,Cidx) );
-                    Knot = B.decode( Des( :, Kidx ) );
-                    %------------------------------------------------------
-                    % Initialise feasible design point pointer
-                    %------------------------------------------------------
-                    Ptr = false( Sz, 1 );
-                    for Idx = 1:Sz
-                        %--------------------------------------------------
-                        % Evaluate the spline constraint for each point in
-                        % the design
-                        %--------------------------------------------------
-                        B.alpha = Coeff( Idx, : );
-                        B.n = Knot( Idx, : );
+                    B.alpha = Coeff( Idx, : );
+                    B.n = Knot( Idx, : );
+                    Feasible = false( N, NumCon );
+                    for II = 1:NumCon
+                        Dx = S( II ).derivative;
+                        Type = S( II ).type;
+                        Val = S( II ).value;
                         C = B.calcDerivative( X, Dx );
                         switch Type
                             case { ">=", "=>" }
-                                Feasible = ( C >= Val );
+                                Feasible( :, II ) = ( C >= Val );
                             case { "<=", "=<"}
-                                Feasible = ( C <= Val );
+                                Feasible( :, II ) = ( C <= Val );
                             case "=="
-                                Feasible = ( C == Val );
+                                Feasible( :, II ) = ( C == Val );
                             otherwise
                                 Msg = 'Unrecognised constraint type "%s"';
                                 error( Msg, Type );
                         end
-                        if all( Feasible )
-                            %----------------------------------------------
-                            % Add a feasible point to the design
-                            %----------------------------------------------
-                            Ptr( Idx ) = true;
-                        end
-                    end %/Idx
-                    Start = Finish + 1;
-                    Finish = Start + sum( Ptr ) - 1;
-                    V ( Start:Finish, ( 1:D ) ) = Des( Ptr, : );
-                    if rem( Counter, 10) == 0
-                        fprintf( '\nCounter = %5.0f', Counter );
                     end
-                end %/while
-            end %/Icon
+                    Feasible = all( Feasible, 2 );
+                    if all( Feasible )
+                        %--------------------------------------------------
+                        % Add a feasible point to the design
+                        %--------------------------------------------------
+                        Ptr( Idx ) = true;
+                    end
+                end %/Idx
+                Start = Finish + 1;
+                Finish = Start + sum( Ptr ) - 1;
+                V ( Start:Finish, ( 1:D ) ) = Des( Ptr, : );
+                Msg = sprintf( "Selected %4.0f out of %4.0f feasible points", Finish, Sz);
+                waitbar( double( Finish ) / double( Sz ), W, Msg );
+            end %/while
+            %--------------------------------------------------------------
+            % Clip the design to the right size
+            %--------------------------------------------------------------
+            V = V( 1:Sz, : );
+            delete( W );
         end % evalSplineConstraint
     end % ordinary methods
 end % SobolSequence
