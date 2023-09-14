@@ -21,10 +21,10 @@ classdef DoEgeneratorECOMO < handle
         DesignInfo  (:,:)    table                                          % Table of pointers to make it easy to populate the design table
         Bspline     (:,:)    table                                          % Table of bSplineTools objects (one row for each distributed parameter)
         Factors     (:,:)    table                                          % Factor details and type
-        Scramble    (1,1)    logical = false                                % Set to true to apply scramble to design
         TubeLength  (1,1)    double  = 185.00                               % Length of the tube [mm]
         TubeIntDia  (1,1)    double  = 4.5                                  % Clean inner diameter of tube [mm]
         Constrained (1,1)    logical = false                                % True if design is constrained
+        Scramble    (1,1)    logical   = false
     end % SetAccess protected
 
     properties ( SetAccess = protected )
@@ -139,106 +139,55 @@ classdef DoEgeneratorECOMO < handle
             end
         end % export
         
-        function D = applyConstraints( obj, Sz, Des )
+        function D = applyConstraints( obj, Sz, P )
             %--------------------------------------------------------------
             % Apply derivative constraints to the distributed parameter.
             % Spline evaluations outside the defined range are removed
             % from the experiment.
             % 
-            % D = obj.applyConstraints( Sz, Des );
+            % D = obj.applyConstraints( Sz, P );
             %
             % Input Arguments
             %
             % Sz  --> Desired size of design
-            % Des --> Current design set
+            % P   --> Sobol set object
             %--------------------------------------------------------------
             arguments
-                obj (1,1)         { mustBeNonempty( obj ) }
+                obj (1,1)                   { mustBeNonempty( obj ) }
                 Sz  (1,1)  double
-                Des (:,:)  double                           = obj.Design
+                P   (:,:)  sobolset                           
             end
             %--------------------------------------------------------------
-            % Point to the distributed factors
+            % Generate an unconstrained design to begin with
             %--------------------------------------------------------------
-            N = 1:obj.NumFactors;
-            N = N( obj.DistIdx );
+            D = net( P, Sz );
             %--------------------------------------------------------------
+            % Point to the constrained parameters
+            %--------------------------------------------------------------
+            ConPtr = obj.Bspline.Constrained;
+            %==============================================================
             % Apply the constraints
-            %--------------------------------------------------------------
-            X = linspace( 0, obj.TubeLength, 101 );                         % Define axial dimension for spline evaluation
-            Idx = obj.intializeConstraintPtr( size( Des, 1 ) );             % Initialise the feasible points pointer
-            ConCounter = 0;
-            for I = 1:numel( N )
+            %==============================================================
+            ConFactors = obj.Bspline.Properties.RowNames( ConPtr );         % Retieve factor names with constraints
+            ConFactors = string( ConFactors );                                                           
+            for Q = 1:numel( ConFactors )
                 %----------------------------------------------------------
-                % Evaluate the necessary spline derivatives
-                %
-                % 1. Parse the constraint
-                % 2. Extract knots and decode
-                % 3. Evaluate spline derivative constraint
+                % Retrieve the constraint structure
                 %----------------------------------------------------------
-                Q = N( I );
-                C = obj.Bspline.Constraint{ Q };
-                applyConstraint = ( ~isempty( C ) && ~isempty( C.type ) );
-                if applyConstraint
-                    Name = C.name;
-                    %------------------------------------------------------
-                    % Parse the constraint and evaluate the derivative
-                    %------------------------------------------------------
-                    NumCon = max( size( C ) );
-                    B = obj.Bspline{ Name, "Object" };                      % retrieve the spline object
-                    Kidx = obj.DesignInfo{ Name, "Knots" };                 % retrieve the knots
-                    if iscell( Kidx )
-                        Kidx = Kidx{ : };
-                    end
-                    Cidx = obj.DesignInfo{ Name, "Coefficients" };          % retrieve the coefficients
-                    if iscell( Cidx )
-                        Cidx = Cidx{ : };
-                    end
-                    %------------------------------------------------------
-                    % Decode knots and coeffcients
-                    %------------------------------------------------------
-                    K = sort( B.decode( Des( :,Kidx ) ), 2 );
-                    Co = obj.decodeSplineCoeff( Name, Des( :, Cidx ) );
-                    for QQ = 1:NumCon
-                        ConCounter = ConCounter + 1;
-                        Ok = false( size( Des( :, 1 ) ) );
-                        for R = 1:size( Des, 1 )
-                            %----------------------------------------------
-                            % Evaluate the spline derivative constraint
-                            %----------------------------------------------
-                            B.n = K( R, : );
-                            B.alpha = Co( R, : );
-                            Y = B.calcDerivative( X, C( QQ ).derivative );
-                            Type = string( C( QQ ).type );
-                            switch Type
-                                case { ">=", "=>" }
-                                    Ok( R ) = all( Y >= C( QQ ).value );
-                                case { "<=", "=<" }
-                                    Ok( R ) = all( Y <= C( QQ ).value );
-                                otherwise
-                                    Ok( R ) = all( Y == C( QQ ).value );
-                            end
-                        end
-                        Idx( :, ConCounter ) = Ok;
-                    end % /QQ
+                Name = ConFactors( Q );
+                S = obj.Bspline{ Name, "Constraint" };
+                if iscell( S )
+                    S = S{ : };
                 end
-            end % /I
-            %--------------------------------------------------------------
-            % Now select the valid design points
-            %--------------------------------------------------------------
-            Idx = all( Idx, 2 );
-            NumFeasible = sum( Idx );
-            if ( NumFeasible > Sz )
-                % Too many feasible points
-                D = Des( 1:Sz, : );
-            elseif ( NumFeasible == 0 )
-                % No feasible points, so just return a design of the right
-                % size.
-                D = Des( 1:Sz, : );
-            else
-                % Return a feasible design
-                D = Des( Idx, : );
-            end
+                V = obj.evalSplineConstraint( Name, S, Sz, 101 );
+                %----------------------------------------------------------
+                % Add constrained points to the design
+                %----------------------------------------------------------
+                [ Cidx, Kidx ] = obj.getParameterPointers( Name );
+                Start = min( Cidx );
+                Finish = max( Kidx );
+                D( :, Start:Finish ) = V;
+            end % /Q
         end % applyConstraints
 
         function Y = evalSpline( obj, X, Name, Coeff, Knot )
@@ -626,9 +575,9 @@ classdef DoEgeneratorECOMO < handle
             %----------------------------------------------------------
             Names = string( obj.Factors.Properties.RowNames );
             Names = Names( obj.DistIdx );
-            T = table( 'Size',  [ obj.NumDist, 1 ], ...
-                'VariableTypes', {'cell'} );
-            T.Properties.VariableNames = "Constraint";
+            T = table( 'Size',  [ obj.NumDist, 2 ], ...
+                'VariableTypes', {'cell', 'logical'} );
+            T.Properties.VariableNames = [ "Constraint", "Constrained" ];
             T.Properties.RowNames = Names;
             Cnames = string( { C(:).name } );
             for Q = 1:numel( Names )
@@ -636,7 +585,8 @@ classdef DoEgeneratorECOMO < handle
                 % Add the constraint structure to the table
                 %----------------------------------------------------------
                 Idx = matches( Cnames, Names( Q ) );
-                T{ Names( Q ), 1 } = { C( Idx ) };
+                Con = ~isempty( C( Idx ) );
+                T( Names( Q ), : ) = cell2table( { { C( Idx ) }, Con });
             end %/Q
         end % parseBsplineConstraints
 
@@ -748,9 +698,7 @@ classdef DoEgeneratorECOMO < handle
                 C( Q ).x = [];
             end
         end % getDefaultConstraints
-    end % protected methods
 
-    methods ( Access = private )
         function [ Coeff ] = decodeSplineCoeff( obj, Name, Coeffc )
             %--------------------------------------------------------------
             % Decode the spline coefficients for the cited distributed
@@ -775,6 +723,37 @@ classdef DoEgeneratorECOMO < handle
             Coeff =  ( B - A ) .* Coeffc +  A; 
         end % decodeSplineCoeff
 
+        function [ Cidx, Kidx ] = getParameterPointers( obj, Name )
+            %--------------------------------------------------------------
+            % Return pointers to the coefficient and knot locations in the
+            % design matrix. If a fixed parameters Knots is a NaN.
+            %
+            % [ Coeff, Knots ] = obj.getParameterPointers( Name );
+            %
+            % Input Arguments:
+            % 
+            % Name --> (string) Name of parameter
+            %
+            % Output Arguments:
+            %
+            % Cidx   --> (double) columns of the design matrix containing
+            %            the parameter coefficients
+            % Kidx   --> (double) columns corresponding to the knots
+            %            associated with a distributed parameter. Will be
+            %            NaN if a fixed parameter.
+            %--------------------------------------------------------------
+            Kidx = obj.DesignInfo{ Name, "Knots" };                         % retrieve the knots
+            if iscell( Kidx )
+                Kidx = Kidx{ : };
+            end
+            Cidx = obj.DesignInfo{ Name, "Coefficients" };                  % retrieve the coefficients
+            if iscell( Cidx )
+                Cidx = Cidx{ : };
+            end
+        end % getParameterPointers
+    end % protected methods
+
+    methods ( Access = private )
         function [ Out, Finish ] = parseDistributed( obj, Name, Finish )
             %--------------------------------------------------------------
             % Output a cell array of dimension {1,2}. First cell contains
