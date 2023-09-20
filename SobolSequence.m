@@ -60,8 +60,8 @@ classdef SobolSequence < DoEgeneratorECOMO
                 Factors (1,:) struct  = struct.empty  
                 Con     (1,:) struct  = struct.empty;
             end
+            S = warning;
             if isempty( Factors )
-                S = warning;
                 warning( "off" );
             end
             if nargin > 0 && all( obj.fieldCheck( Factors ) )
