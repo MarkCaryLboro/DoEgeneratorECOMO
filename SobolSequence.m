@@ -57,7 +57,7 @@ classdef SobolSequence < DoEgeneratorECOMO
             %
             %--------------------------------------------------------------
             arguments
-                Factors (1,:) struct  { mustBeNonempty( Factors ) }  
+                Factors (1,:) struct  = struct.empty  
                 Con     (1,:) struct  = struct.empty;
             end
             if nargin > 0 && all( obj.fieldCheck( Factors ) )
