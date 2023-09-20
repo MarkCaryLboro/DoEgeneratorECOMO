@@ -60,11 +60,16 @@ classdef SobolSequence < DoEgeneratorECOMO
                 Factors (1,:) struct  = struct.empty  
                 Con     (1,:) struct  = struct.empty;
             end
+            if isempty( Factors )
+                S = warning;
+                warning( "off" );
+            end
             if nargin > 0 && all( obj.fieldCheck( Factors ) )
                 obj = obj.addFactor( Factors, Con );
             else
                 warning( "Missing fields in input structure" );
             end
+            warning( S );
         end % SobolSequence
     end % Constructor method
 
