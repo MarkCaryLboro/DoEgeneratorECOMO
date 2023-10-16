@@ -120,6 +120,10 @@ classdef SobolSequence < DoEgeneratorECOMO
                 obj.Scramble = true;
             end 
             %--------------------------------------------------------------
+            % Set initial size of experiment
+            %--------------------------------------------------------------
+            obj.InitialSize = N;
+            %--------------------------------------------------------------
             % Apply constraints if defined
             %--------------------------------------------------------------
             if obj.Constrained

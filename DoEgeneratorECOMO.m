@@ -21,6 +21,7 @@ classdef DoEgeneratorECOMO < handle
         DesignInfo  (:,:)    table                                          % Table of pointers to make it easy to populate the design table
         Bspline     (:,:)    table                                          % Table of bSplineTools objects (one row for each distributed parameter)
         Factors     (:,:)    table                                          % Factor details and type
+        InitialSize (1,1)    double                                         % Initial size of experiment
         TubeLength  (1,1)    double  = 185.00                               % Length of the tube [mm]
         TubeIntDia  (1,1)    double  = 4.5                                  % Clean inner diameter of tube [mm]
         Constrained (1,1)    logical = false                                % True if design is constrained
@@ -610,7 +611,12 @@ classdef DoEgeneratorECOMO < handle
             %--------------------------------------------------------------
             Ok = all( obj.fieldCheck( S ) );                                % Check necessary fields are present
             assert( Ok, "Missing information for factor %s", S.Name);       % Throw an error if there is missing information
-            T = struct2table( S );
+            if ( max( size( S ) ) == 1 )
+                % Scalar structure
+                T = struct2table( S, "AsArray", true );
+            else
+                T = struct2table( S );
+            end
             T.Properties.RowNames = string( T.Name );
             Idx = ~contains( T.Properties.VariableNames, "Name" );
             T = T( :, obj.Expected( Idx ) );
