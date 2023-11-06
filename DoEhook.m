@@ -5,7 +5,7 @@ classdef DoEhook < handle
     % generates a DoE for the fixed and distributed parameters identified
     % from data in the model.
     %----------------------------------------------------------------------
-    
+
     events
         RUN_EXPERIMENT                                                      % Run the full experiment
     end
@@ -42,14 +42,14 @@ classdef DoEhook < handle
             % Src --> SobolSequence object
             %--------------------------------------------------------------
             arguments
-                obj (1,1) DoEhook       
+                obj (1,1) DoEhook
                 Src (1,1) SobolSequence { mustBeNonempty( Src ) }
             end
             %--------------------------------------------------------------
             % Define the listener
             %--------------------------------------------------------------
             obj.Lh = addlistener( Src, "DESIGN_AVAILABLE",...
-                        @( SrcObj, Evnt )obj.eventCb( SrcObj, Evnt ) );
+                @( SrcObj, Evnt )obj.eventCb( SrcObj, Evnt ) );
             obj.Design = Src.Design;
         end % addDesignAvailableListener
 
@@ -77,15 +77,15 @@ classdef DoEhook < handle
             % Src --> ecomoInterface object
             %--------------------------------------------------------------
             arguments
-                obj (1,1)   DoEhook 
+                obj (1,1)   DoEhook
                 Src (1,1)   ecomoInterface  { mustBeNonempty( Src ) }
             end
             %--------------------------------------------------------------
             % Define the listener
             %--------------------------------------------------------------
             obj.Uh = addlistener( Src, "PROCESS_NEW_QUERY",...
-                     @( Src, Evnt )obj.eventCbProcessNewQuery( Src,...
-                                                                  Evnt ) );
+                @( Src, Evnt )obj.eventCbProcessNewQuery( Src,...
+                Evnt ) );
         end % addProcessNewQueryListener
 
         function obj = eventCbProcessNewQuery( obj, Src, E )
@@ -95,11 +95,11 @@ classdef DoEhook < handle
             % This function creates a table listing the parameters in the
             % experiment. Distributed parameters are converted to lookup
             % tables.
-            %--------------------------------------------------------------     
+            %--------------------------------------------------------------
             arguments
                 obj   (1,1) DoEhook { mustBeNonempty( obj )}                % DoEhook object
                 Src   (1,1)         { mustBeNonempty( Src ) }               % SobolSequence object
-                E     (1,1)         { mustBeNonempty( E ) }                 % EventData object 
+                E     (1,1)         { mustBeNonempty( E ) }                 % EventData object
             end
             %--------------------------------------------------------------
             % Event check
@@ -122,7 +122,7 @@ classdef DoEhook < handle
             arguments
                 obj   (1,1) DoEhook { mustBeNonempty( obj ) }               % DoEhook object
                 Src   (1,1)         { mustBeNonempty( Src ) }               % SobolSequence object
-                E     (1,1)         { mustBeNonempty( E ) }                 % EventData object 
+                E     (1,1)         { mustBeNonempty( E ) }                 % EventData object
             end
             %--------------------------------------------------------------
             % Event check
@@ -192,7 +192,7 @@ classdef DoEhook < handle
             % Src --> Event source object (ecomoInterface object).
             %--------------------------------------------------------------
             S = obj.DesObj;
-            S = S.addDesignPoint( Src.B.Xnext );   
+            S = S.addDesignPoint( Src.B.Xnext );
             obj.Design = S.Design;
             Simulated = [ obj.ParTable.Simulated; false ];
             obj = obj.createParTable( S );
@@ -216,7 +216,7 @@ classdef DoEhook < handle
             T = table( 'Size', [ Npts, numel( VarTypes ) ],...
                 'VariableTypes', VarTypes );
             T.Properties.VariableNames = [ Fnames; "Simulated" ];
-            obj.Type = obj.getParameterTypes( Src ); 
+            obj.Type = obj.getParameterTypes( Src );
             for R = 1:Npts
                 %----------------------------------------------------------
                 % Fill out the table a row at a time
@@ -226,8 +226,8 @@ classdef DoEhook < handle
                         %--------------------------------------------------
                         % Distributed factor. Calculate lookup table
                         %--------------------------------------------------
-                        LookUp = obj.makeLookUp( Src, Fnames( Q ), R );
-                        T( R, Q ) = { LookUp }; 
+                        LookUp = obj.makeLookUp( Fnames( Q ), R );
+                        T( R, Q ) = { LookUp };
                     else
                         %--------------------------------------------------
                         % Fixed parameter
@@ -251,6 +251,148 @@ classdef DoEhook < handle
             end % R
             obj.ParTable = T;
         end % createParTable
+
+        function LookUp = makeLookUp( obj, Name, RunNumber )
+            %--------------------------------------------------------------
+            % Evaluate the B-spline and calculate the lookup table values
+            %
+            % LookUp = obj.makeLookUp( Src, Name, RunNumber );
+            %
+            % Input Arguments
+            %
+            % Name      --> Name of parameter to process
+            % RunNumber --> Current experimental design run
+            %--------------------------------------------------------------
+            Src = obj.DesObj;
+            Idx = matches( Src.Bspline.Properties.RowNames, Name );
+            Tensor = Src.Bspline.Tensor( Idx );
+            if Tensor
+                %----------------------------------------------------------
+                % Two-dimensional tensor product B-spline
+                %----------------------------------------------------------
+                LookUp = obj.tensorProdBsplineMakeLookUp( Name, RunNumber );
+            else               
+                %----------------------------------------------------------
+                % One-dimensional B-spline
+                %----------------------------------------------------------
+                LookUp = obj.bSplineMakeLookUp( Name, RunNumber );
+            end
+        end % makeLookUp
+
+        function LookUp = bSplineMakeLookUp( obj, Name, RunNumber )
+            %--------------------------------------------------------------
+            % Generate a 1-d lookup
+            %
+            % LookUp = obj.bSplineMakeLookUp( Name, RunNumber );
+            %
+            % Input Arguments:
+            %
+            % Name      --> (string) Variable name
+            % RunNumber --> ( double) Current experimental design run
+            %--------------------------------------------------------------
+            Src = obj.DesObj;
+            Info = Src.DesignInfo( Name, : );
+            Idx = matches( Src.Factors.Properties.RowNames, Name );
+            Sz = Src.Factors.Sz( Idx, : );
+            %--------------------------------------------------------------
+            % Retrieve Low and High input limits & define lookup table
+            % input vector
+            %--------------------------------------------------------------
+            B = Src.Bspline{ Name, "Object" };
+            if iscell( B )
+                B = B{ : };
+            end
+            Lo = B.a;
+            Hi = B.b;
+            LookUp = zeros( Sz );
+            LookUp( 1,: ) = linspace( Lo, Hi, max( Sz ) );                  % inputs at which to evaluate spline
+            %--------------------------------------------------------------
+            % Point to the columns in the design table defining the spline
+            % parameters
+            %--------------------------------------------------------------
+            Coeff = Info.Coefficients;
+            Knot = Info.Knots;
+            if iscell( Coeff )
+                Coeff = Info.Coefficients{ : };
+            end
+            if iscell( Knot )
+                Knot = Info.Knots{ : };
+            end
+            %--------------------------------------------------------------
+            % Capture the requested spline parameter values
+            %--------------------------------------------------------------
+            Coeff = Src.Design( RunNumber, Coeff );
+            Knot = Src.Design( RunNumber, Knot );
+            %--------------------------------------------------------------
+            % Calculate the response
+            %--------------------------------------------------------------
+            Y = Src.evalSpline( LookUp( 1,: ), Name, Coeff, Knot );
+            LookUp( 2,: ) = reshape( Y, 1, numel( Y ) );
+            InputVar = Src.Bspline{ Name, "Xname" };
+            Idx = matches( InputVar,"" );
+            InputVar = InputVar( ~Idx );
+            if matches( InputVar, "x", 'IgnoreCase', true)
+                %----------------------------------------------------------
+                % Convert to [m] for simulation
+                %----------------------------------------------------------
+                LookUp( 1,: ) = 0.001 * LookUp( 1,: );
+            end
+            LookUp = LookUp.';
+        end % bSplineMakeLookUp
+
+        function LookUp = tensorProdBsplineMakeLookUp( obj, Name, RunNumber )
+            %--------------------------------------------------------------
+            % Generate a 2-d lookup based on the tensor product spline
+            %
+            % LookUp = obj.tensorProdBsplineMakeLookUp( Name );
+            %
+            % Input Arguments:
+            %
+            % Name      --> (string) Variable name
+            % RunNumber --> ( double) Current experimental design run
+            %--------------------------------------------------------------
+            Src = obj.DesObj;
+            Info = Src.DesignInfo( Name, : );
+            Idx = matches( Src.Factors.Properties.RowNames, Name );
+            Sz = Src.Factors.Sz( Idx, : );
+            T = Src.Bspline.Object( Idx );
+            if iscell( T )
+                T = T{ : };
+            end
+            Lo = T.A;
+            Hi = T.B;
+            %--------------------------------------------------------------
+            % Create data points to evaluate the spline at
+            %--------------------------------------------------------------
+            X = linspace( Lo( 1 ), Hi( 1 ), Sz( 1 ) );
+            Y = linspace( Lo( 2 ), Hi( 2 ), Sz( 2 ) );
+            [ X, Y ] = meshgrid( X, Y );
+            %--------------------------------------------------------------
+            % Point to the columns in the design table defining the spline
+            % parameters
+            %--------------------------------------------------------------
+            Coeff = Info.Coefficients;
+            Knot = Info.Knots;
+            if iscell( Coeff )
+                Coeff = Info.Coefficients{ : };
+            end
+            if iscell( Knot )
+                Knot = Info.Knots{ : };
+            end
+            %--------------------------------------------------------------
+            % Capture the requested spline parameter values
+            %--------------------------------------------------------------
+            Coeff = Src.Design( RunNumber, Coeff );
+            Knot = Src.Design( RunNumber, Knot );
+            Knot = mat2cell( Knot, [T.K( 1 )], [1, T.K( 2 ) ] );            % This only works for a two-dimensional spline
+            %--------------------------------------------------------------
+            % Calculate the response
+            %--------------------------------------------------------------
+            T = T.setAlpha( Coeff );
+            T = T.setKnotSequences( Knot );
+            Z = T.eval( [ X( :) Y( : ) ] );
+            LookUp = [ X( : ), Y( : ), Z ];
+        end % tensorProdBsplineMakeLookUp
     end % protected methods
 
     methods ( Access = private, Static = true )
@@ -289,61 +431,5 @@ classdef DoEhook < handle
             %--------------------------------------------------------------
             VarTypes{ end + 1 } = 'logical';
         end % createVarTypes
-
-        function LookUp = makeLookUp( Src, Name, RunNumber )
-            %--------------------------------------------------------------
-            % Evaluate the B-spline and calculate the lookup table values
-            %
-            % LookUp = obj.makeLookUp( Src, Name );
-            %
-            % Input Arguments
-            %
-            % Src       --> Event source object.
-            % Name      --> Name of parameter to process
-            % RunNumber --> Current experimental design run
-            %--------------------------------------------------------------
-            Info = Src.DesignInfo( Name, : );
-            Idx = matches( Src.Factors.Properties.RowNames, Name );
-            Sz = Src.Factors.Sz( Idx, : );
-            %--------------------------------------------------------------
-            % Retrieve Low and High input limits & define lookup table 
-            % input vector
-            %--------------------------------------------------------------
-            B = Src.Bspline.Object( Idx );
-            Lo = B.a;
-            Hi = B.b;
-            LookUp = zeros( Sz );
-            LookUp( 1,: ) = linspace( Lo, Hi, max( Sz ) );                  % inputs at which to evaluate spline
-            %--------------------------------------------------------------
-            % Point to the columns in the design table defining the spline
-            % parameters
-            %--------------------------------------------------------------
-            Coeff = Info.Coefficients;
-            Knot = Info.Knots;
-            if iscell( Coeff )
-                Coeff = Info.Coefficients{ : };
-            end
-            if iscell( Knot )
-                Knot = Info.Knots{ : };
-            end
-            %--------------------------------------------------------------
-            % Capture the requested spline parameter values
-            %--------------------------------------------------------------
-            Coeff = Src.Design( RunNumber, Coeff );
-            Knot = Src.Design( RunNumber, Knot );
-            %--------------------------------------------------------------
-            % Calculate the response
-            %--------------------------------------------------------------
-            Y = Src.evalSpline( LookUp( 1,: ), Name, Coeff, Knot );
-            LookUp( 2,: ) = reshape( Y, 1, numel( Y ) );
-            InputVar = Src.Bspline{ Name, "Xname" };
-            if matches( InputVar, "x", 'IgnoreCase', true)
-                %----------------------------------------------------------
-                % Convert to [m] for simulation
-                %----------------------------------------------------------
-                LookUp( 1,: ) = 0.001 * LookUp( 1,: );       
-            end
-            LookUp = LookUp.';
-        end
-    end % private methods
+    end % private & static methods
 end % DoEhook
