@@ -5,8 +5,8 @@ classdef SobolSequence < DoEgeneratorECOMO
     % Optimisation.
     %----------------------------------------------------------------------
     properties ( SetAccess = protected )
-        Leap        (1,1) double    = max( primes( 7301 ) )
-        Skip        (1,1) double    = max( primes( 49 ) )
+        Leap        (1,1) double    = max( primes( 49 ) )
+        Skip        (1,1) double    = max( primes( 7301 ) )
     end % protected methods
 
     methods
@@ -176,6 +176,9 @@ classdef SobolSequence < DoEgeneratorECOMO
             % Fetch the B-spline object
             %--------------------------------------------------------------
             B = obj.Bspline{ Name, "Object" };
+            if iscell( B )
+                B = B{ : };
+            end
             %--------------------------------------------------------------
             % Create the evaluation vector (spline input)
             %--------------------------------------------------------------

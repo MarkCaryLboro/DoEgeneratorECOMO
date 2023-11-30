@@ -197,7 +197,25 @@ classdef DoEhook < handle
             Simulated = [ obj.ParTable.Simulated; false ];
             obj = obj.createParTable( S );
             obj.ParTable.Simulated = Simulated;
-        end
+        end % augmentParTable
+
+        function obj = overwritePartable( obj, X )
+            %--------------------------------------------------------------
+            % Overwrite the last entry in the parameter table
+            %
+            % obj = obj.overwritePartable( X );
+            %
+            % Input Arguments:
+            %
+            % X --> (double) Replacement parameter values
+            %--------------------------------------------------------------
+            S = obj.DesObj;
+            S = S.overwriteDesignPoint( X );
+            obj.Design = S.Design;
+            Simulated = [ obj.ParTable.Simulated( 1:( end-1 ) ); false ];
+            obj = obj.createParTable( S );
+            obj.ParTable.Simulated = Simulated;
+        end % overwritePartable
 
         function obj = createParTable( obj, Src )
             %--------------------------------------------------------------

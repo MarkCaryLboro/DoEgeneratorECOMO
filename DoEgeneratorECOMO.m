@@ -73,6 +73,30 @@ classdef DoEgeneratorECOMO < handle
             obj.NumPoints_ = size( obj.Design, 1 );
         end % addDesignPoint
 
+        function obj = overwriteDesignPoint( obj, Data )
+            %--------------------------------------------------------------
+            % Overwrite the last point in the current design
+            %
+            % obj = obj.overwriteDesignPoint( Data );
+            %
+            % Input Arguments:
+            %
+            % Data  --> (double) row vector of new design data in
+            %           engineering units.
+            %--------------------------------------------------------------
+            arguments
+                obj     (1,1)               { mustBeNonempty( obj ) }
+                Data    (1,:) double        
+            end
+            %--------------------------------------------------------------
+            % Check the data format
+            %--------------------------------------------------------------
+            Ok = obj.checkDataFormat( Data, obj.NumColDes_ );
+            assert( Ok, "Data must be numeric and have %3.0f columns",...
+                            obj.NumColDes_ );
+            obj.Design( end ) = Data; 
+        end % overwriteDesignPoint
+
         function X = decode( obj, Xc, Name )
             %--------------------------------------------------------------
             % Decode from the interval [0,1] --> [a,b] for a fixed factor
@@ -190,46 +214,6 @@ classdef DoEgeneratorECOMO < handle
                 D( :, Start:Finish ) = V;
             end % /Q
         end % applyConstraints
-
-        function Y = evalTensorProdSpline( obj, X, Name, Coeff, Knot )
-            %--------------------------------------------------------------
-            % Evaluate the B-spline at the coordinates specified
-            %
-            % Y = obj.evalTensorProdSpline( Name, Coeff, Knots );
-            %
-            % Input Arguments:
-            %
-            % X     --> (double) Input data matrix (N-by-obj.NumDim) 
-            % Name  --> (string) Name of distributed parameter
-            % Coeff --> (double) Basis function coefficients
-            %--------------------------------------------------------------
-            arguments
-                obj   (1,1)          { mustBeNonempty( obj ) }
-                X     (:,1)  double  { mustBeNonempty( X ) }
-                Name  (1,1)  string  { mustBeNonempty( Name ) }
-                Coeff (:,1)  double  { mustBeNonempty( Coeff ) }
-                Knot  (:,1)  double  { mustBeNonempty( Knot ) }
-            end         
-            %--------------------------------------------------------------
-            % Check name of distributed parameter is valid
-            %--------------------------------------------------------------
-            Ok = matches( Name, obj.Factors.Properties.RowNames );
-            assert( Ok, 'Parameter "%s" not defined', Name );
-            %--------------------------------------------------------------
-            % Check that parameter is of type "distributed"
-            %--------------------------------------------------------------
-            Idx = matches( obj.Factors.Properties.RowNames, Name );
-            Ok = ~obj.Factors{ Idx, "Fixed" };
-            assert( Ok, 'Parameter "%s" cannot be of type "Fixed"', Name );
-            %--------------------------------------------------------------
-            % Capture the relevant B-spline object
-            %--------------------------------------------------------------
-            B = obj.Bspline{ Name, "Object"};
-            %--------------------------------------------------------------
-            % Clip input range to the interval [B.a, B.b]
-            %--------------------------------------------------------------
-            
-        end
 
         function Y = evalSpline( obj, X, Name, Coeff, Knot )
             %--------------------------------------------------------------
@@ -875,11 +859,11 @@ classdef DoEgeneratorECOMO < handle
             % A     --> (double) Low limits
             % B     --> (double) Hi limits
             %--------------------------------------------------------------
-            A = obj.Factors.Lo( Idx );
+            A = obj.Factors.Lo( Idx, : );
             if iscell( A )
                 A = A{ : };
             end
-            B = obj.Factors.Hi( Idx );
+            B = obj.Factors.Hi( Idx, : );
             if iscell( B )
                 B = B{ : };
             end     
