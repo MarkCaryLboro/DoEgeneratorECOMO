@@ -990,7 +990,7 @@ classdef DoEgeneratorECOMO < handle
                     NumKnots( Q ) = SplineObj.k;
                 else
                     NumBasis( Q ) = SplineObj.NumBas;
-                    NumKnots( Q ) = sum( SplineObj.NumKnt );
+                    NumKnots( Q ) = sum( SplineObj.K );
                 end
             end % /Q
             NumBasis = NumBasis( : );

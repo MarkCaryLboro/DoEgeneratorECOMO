@@ -111,7 +111,8 @@ classdef SobolSequence < DoEgeneratorECOMO
             %--------------------------------------------------------------
             obj.Leap = Opts.Leap;
             obj.Skip = Opts.Skip;
-            P = sobolset( D, "Leap", obj.Leap, "Skip", obj.Skip );
+            P = sobolset( D + 1, "Leap", obj.Leap, "Skip", obj.Skip,...
+                          "PointOrder", "standard" );
             if Opts.Scramble
                 %----------------------------------------------------------
                 % Scramble the design
@@ -135,8 +136,9 @@ classdef SobolSequence < DoEgeneratorECOMO
                 obj.NumPoints_ = size( Des, 1 );
             else
                 obj.NumPoints_ = N;
-                Des = net( P, obj.NumPoints );
+                Des = net( P, double( obj.NumPoints ) );
             end
+            Des = Des( :, 2:end );
             obj.NumColDes_ = D;
             %--------------------------------------------------------------
             % Decode the design

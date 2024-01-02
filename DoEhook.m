@@ -10,9 +10,12 @@ classdef DoEhook < handle
         RUN_EXPERIMENT                                                      % Run the full experiment
     end
 
-    properties ( SetAccess = protected)
+    properties ( SetAccess = protected, Transient )
         Lh          (1,1)                                                   % Listener handle for DESIGN_AVAILABLE event
         Uh          (1,1)                                                   % Listener handle for UPDATE event
+    end 
+
+    properties ( SetAccess = protected)
         ParTable    (:,:) table                                             % Parameter table in engineering units
         TubeLength  (1,1) double                                            % Length of the tube [mm]
         TubeIntDia  (1,1) double                                            % Clean inner diameter of tube [mm]
@@ -373,7 +376,7 @@ classdef DoEhook < handle
             Info = Src.DesignInfo( Name, : );
             Idx = matches( Src.Factors.Properties.RowNames, Name );
             Sz = Src.Factors.Sz( Idx, : );
-            T = Src.Bspline.Object( Idx );
+            T = Src.Bspline{ Name, "Object" };
             if iscell( T )
                 T = T{ : };
             end
@@ -402,7 +405,7 @@ classdef DoEhook < handle
             %--------------------------------------------------------------
             Coeff = Src.Design( RunNumber, Coeff );
             Knot = Src.Design( RunNumber, Knot );
-            Knot = mat2cell( Knot, [T.K( 1 )], [1, T.K( 2 ) ] );            % This only works for a two-dimensional spline
+            Knot = T.convertKnotSequences( Knot );
             %--------------------------------------------------------------
             % Calculate the response
             %--------------------------------------------------------------
