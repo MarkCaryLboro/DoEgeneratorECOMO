@@ -2,10 +2,6 @@ classdef DoEgeneratorECOMO < handle
     % A class to handle mixed fixed and distributed parameter DoE
     % generation for the ECOMO model
 
-    events
-        DESIGN_AVAILABLE
-    end % events
-
     properties ( Constant = true, Access = protected)
         Expected    string = [ "Name", "Units", "Fixed", "Lo", "Hi", "Sz", "Type", "Spline" ];
         ExpectCon = [ "name", "derivative", "type", "value", "x" ];
@@ -147,22 +143,6 @@ classdef DoEgeneratorECOMO < handle
             [ A, B ] = obj.getLimits( Idx );
             Xc = ( X - A ) ./ ( B - A );
         end % code
-
-        function export( obj )
-            %--------------------------------------------------------------
-            % Export the design to the ECOMO model configuration class
-            %
-            % obj = export();
-            %--------------------------------------------------------------
-            arguments
-                obj  (1,1)          { mustBeNonempty( obj ) }
-            end
-            if obj.ExportReady
-                notify( obj, 'DESIGN_AVAILABLE' );
-            else
-                warning( 'Design not generated!' );
-            end
-        end % export
         
         function D = applyConstraints( obj, Sz, P )
             %--------------------------------------------------------------

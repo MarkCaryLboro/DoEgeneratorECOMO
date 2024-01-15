@@ -1,14 +1,8 @@
 classdef DoEhook < handle
     %----------------------------------------------------------------------
     % A class to generate configuration data required to run the ECOMO
-    % model. The class is a listener for the SobolSequence class, which
-    % generates a DoE for the fixed and distributed parameters identified
-    % from data in the model.
+    % model. 
     %----------------------------------------------------------------------
-
-    events
-        RUN_EXPERIMENT                                                      % Run the full experiment
-    end
 
     properties ( SetAccess = protected, Transient )
         Lh          (1,1)                                                   % Listener handle for DESIGN_AVAILABLE event
@@ -23,116 +17,27 @@ classdef DoEhook < handle
         NumFixed    (1,1) int64                                             % Number of fixed factors
         NumDist     (1,1) int64                                             % Number of B-spline factors
         DistIdx     (1,:) logical                                           % Logical index to distributed parameters
-        Design      (:,:) double                                            % Durrent experimental design in engineering units
         Type        (1,:) string                                            % String array of variable types (Parameter or Boundary)
         DesObj      (1,1)                                                   % Experimental design object
     end % Protected properties
 
     properties ( SetAccess = protected, Dependent = true )
-        NumPoints   (1,1) int64                                             % Number of points in the design
+        Design      (:,:)                                                   % Durrent experimental design in engineering units
+        NumPoints   (1,1)                                                   % Number of points in the design
     end % dependent properties
 
     methods
-        function obj = addDesignAvailableListener( obj, Src )
+        function obj = transDesign( obj, Src )
             %--------------------------------------------------------------
-            % Add a listener for the DESIGN_AVAILABLE event broadcast by a
-            % SobolSequence object.
-            %
-            % obj = obj.addUpdateListener( Src )
-            %
-            % Input Arguments:
-            %
-            % Src --> SobolSequence object
+            % Translate the design into the corresponding ECOMO model
+            % simulation format. This function creates a table listing the 
+            % parameters in the experiment. Distributed parameters are 
+            % converted to lookup tables.
             %--------------------------------------------------------------
             arguments
-                obj (1,1) DoEhook
-                Src (1,1) SobolSequence { mustBeNonempty( Src ) }
+                obj   (1,1) DoEhook             { mustBeNonempty( obj ) }   % DoEhook object
+                Src   (1,1) SobolSequence       { mustBeNonempty( Src ) }   % SobolSequence object
             end
-            %--------------------------------------------------------------
-            % Define the listener
-            %--------------------------------------------------------------
-            obj.Lh = addlistener( Src, "DESIGN_AVAILABLE",...
-                @( SrcObj, Evnt )obj.eventCb( SrcObj, Evnt ) );
-            obj.Design = Src.Design;
-        end % addDesignAvailableListener
-
-        function runSimulation( obj )
-            %--------------------------------------------------------------
-            % Trigger the RUN_EXPERIMENT event to execute the simulation
-            %
-            % obj.runSimulation();
-            %--------------------------------------------------------------
-            arguments
-                obj (1,1) DoEhook { mustBeNonempty( obj ) }
-            end
-            notify( obj, 'RUN_EXPERIMENT' );
-        end % runSimulation
-
-        function obj = addProcessNewQueryListener( obj, Src )
-            %--------------------------------------------------------------
-            % Add a listener for the PROCESS_NEW_QUERY event broadcast by
-            % object
-            %
-            % obj = obj.addProcessNewQueryListener( Src )
-            %
-            % Input Arguments:
-            %
-            % Src --> ecomoInterface object
-            %--------------------------------------------------------------
-            arguments
-                obj (1,1)   DoEhook
-                Src (1,1)   ecomoInterface  { mustBeNonempty( Src ) }
-            end
-            %--------------------------------------------------------------
-            % Define the listener
-            %--------------------------------------------------------------
-            obj.Uh = addlistener( Src, "PROCESS_NEW_QUERY",...
-                @( Src, Evnt )obj.eventCbProcessNewQuery( Src,...
-                Evnt ) );
-        end % addProcessNewQueryListener
-
-        function obj = eventCbProcessNewQuery( obj, Src, E )
-            %--------------------------------------------------------------
-            % PROCESS_NEW_QUERY event listener
-            %
-            % This function creates a table listing the parameters in the
-            % experiment. Distributed parameters are converted to lookup
-            % tables.
-            %--------------------------------------------------------------
-            arguments
-                obj   (1,1) DoEhook { mustBeNonempty( obj )}                % DoEhook object
-                Src   (1,1)         { mustBeNonempty( Src ) }               % SobolSequence object
-                E     (1,1)         { mustBeNonempty( E ) }                 % EventData object
-            end
-            %--------------------------------------------------------------
-            % Event check
-            %--------------------------------------------------------------
-            Ename = string( E.EventName );
-            Ok = contains( "PROCESS_NEW_QUERY", Ename );
-            assert( Ok, 'Not processing the %s event supplied', Ename );
-            obj = obj.augmentParTable( Src );
-            notify( obj, 'RUN_EXPERIMENT' );
-        end % eventCbProcessNewQuery
-
-        function obj = eventCb( obj, Src, E )
-            %--------------------------------------------------------------
-            % DESIGN_AVAILABLE event listener
-            %
-            % This function creates a table listing the parameters in the
-            % experiment. Distributed parameters are converted to lookup
-            % tables.
-            %--------------------------------------------------------------
-            arguments
-                obj   (1,1) DoEhook { mustBeNonempty( obj ) }               % DoEhook object
-                Src   (1,1)         { mustBeNonempty( Src ) }               % SobolSequence object
-                E     (1,1)         { mustBeNonempty( E ) }                 % EventData object
-            end
-            %--------------------------------------------------------------
-            % Event check
-            %--------------------------------------------------------------
-            Ename = string( E.EventName );
-            Ok = contains( "DESIGN_AVAILABLE", Ename );
-            assert( Ok, 'Not processing the %s event supplied', Ename );
             %--------------------------------------------------------------
             % Save the SobolSequence object
             %--------------------------------------------------------------
@@ -153,7 +58,7 @@ classdef DoEhook < handle
             % Create the table of physical parameter values
             %--------------------------------------------------------------
             obj = obj.createParTable( Src );
-        end % eventCB
+        end % transDesign
 
         function obj = setSimulated( obj, N, State)
             %--------------------------------------------------------------
@@ -168,40 +73,56 @@ classdef DoEhook < handle
             % State     --> (logical) State to set {false}
             %--------------------------------------------------------------
             arguments
-                obj
+                obj   (1,1) DoEhook             { mustBeNonempty( obj ) }   % DoEhook object
                 N     (1,:)  int64      { mustBeNonempty( N ) }
                 State (1,:)  logical    = false
             end
             N = double( N );
             obj.ParTable.Simulated( N ) = State;
         end % setSimulated
-    end % ordinary methods
 
-    methods
-        function N = get.NumPoints( obj )
-            N = int64( size( obj.Design, 1 ) );
-        end
-    end % Get/Set methods
-
-    methods ( Access = protected )
-        function obj = augmentParTable( obj, Src )
+        function obj = augmentParTable( obj, Data )
             %--------------------------------------------------------------
             % Augment the parameter table with the new query
             %
-            % obj = obj.augmentParTable( Src );
+            % obj = obj.augmentParTable( Data );
             %
             % Input Arguments
             %
-            % Src --> Event source object (ecomoInterface object).
+            % Data --> DoE points to be translated to ECOMO model
+            %          parameters
             %--------------------------------------------------------------
-            S = obj.DesObj;
-            S = S.addDesignPoint( Src.B.Xnext );
-            obj.Design = S.Design;
+            arguments
+                obj   (1,1) DoEhook             { mustBeNonempty( obj ) }   % DoEhook object
+                Data  (:,:) double              { mustBeNonempty( Data ) }  % Data points to add
+            end
+            %--------------------------------------------------------------
+            % Check the data has the appropriate number of columns
+            %--------------------------------------------------------------
+            N = size( obj.Design, 2 );
+            Ok = ( size( Data, 2 ) == N );
+            assert( Ok, "Data must be numeric and have %3.0f columns", N );
+            %--------------------------------------------------------------
+            % Add the data point
+            %--------------------------------------------------------------
+            S = obj.DesObj.addDesignPoint( Data );
             Simulated = [ obj.ParTable.Simulated; false ];
             obj = obj.createParTable( S );
             obj.ParTable.Simulated = Simulated;
         end % augmentParTable
+    end % ordinary methods
 
+    methods
+        function N = get.NumPoints( obj )
+            N = obj.DesObj.NumPoints;
+        end
+
+        function D = get.Design( obj )
+            D = obj.DesObj.Design;
+        end
+    end % Get/Set methods
+
+    methods ( Access = protected )
         function obj = overwritePartable( obj, X )
             %--------------------------------------------------------------
             % Overwrite the last entry in the parameter table

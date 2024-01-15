@@ -112,7 +112,7 @@ classdef SobolSequence < DoEgeneratorECOMO
             obj.Leap = Opts.Leap;
             obj.Skip = Opts.Skip;
             P = sobolset( D + 1, "Leap", obj.Leap, "Skip", obj.Skip,...
-                          "PointOrder", "standard" );
+                          "PointOrder", "graycode" );
             if Opts.Scramble
                 %----------------------------------------------------------
                 % Scramble the design
