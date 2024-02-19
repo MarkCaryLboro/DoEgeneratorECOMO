@@ -2,10 +2,6 @@ classdef DoEgeneratorECOMO < handle
     % A class to handle mixed fixed and distributed parameter DoE
     % generation for the ECOMO model
 
-    events
-        DESIGN_AVAILABLE
-    end % events
-
     properties ( Constant = true, Access = protected)
         Expected    string = [ "Name", "Units", "Fixed", "Lo", "Hi", "Sz", "Type", "Spline" ];
         ExpectCon = [ "name", "derivative", "type", "value", "x" ];
@@ -21,6 +17,7 @@ classdef DoEgeneratorECOMO < handle
         DesignInfo  (:,:)    table                                          % Table of pointers to make it easy to populate the design table
         Bspline     (:,:)    table                                          % Table of bSplineTools objects (one row for each distributed parameter)
         Factors     (:,:)    table                                          % Factor details and type
+        InitialSize (1,1)    double                                         % Initial size of experiment
         TubeLength  (1,1)    double  = 185.00                               % Length of the tube [mm]
         TubeIntDia  (1,1)    double  = 4.5                                  % Clean inner diameter of tube [mm]
         Constrained (1,1)    logical = false                                % True if design is constrained
@@ -72,6 +69,30 @@ classdef DoEgeneratorECOMO < handle
             obj.NumPoints_ = size( obj.Design, 1 );
         end % addDesignPoint
 
+        function obj = overwriteDesignPoint( obj, Data )
+            %--------------------------------------------------------------
+            % Overwrite the last point in the current design
+            %
+            % obj = obj.overwriteDesignPoint( Data );
+            %
+            % Input Arguments:
+            %
+            % Data  --> (double) row vector of new design data in
+            %           engineering units.
+            %--------------------------------------------------------------
+            arguments
+                obj     (1,1)               { mustBeNonempty( obj ) }
+                Data    (1,:) double        
+            end
+            %--------------------------------------------------------------
+            % Check the data format
+            %--------------------------------------------------------------
+            Ok = obj.checkDataFormat( Data, obj.NumColDes_ );
+            assert( Ok, "Data must be numeric and have %3.0f columns",...
+                            obj.NumColDes_ );
+            obj.Design( end ) = Data; 
+        end % overwriteDesignPoint
+
         function X = decode( obj, Xc, Name )
             %--------------------------------------------------------------
             % Decode from the interval [0,1] --> [a,b] for a fixed factor
@@ -122,22 +143,6 @@ classdef DoEgeneratorECOMO < handle
             [ A, B ] = obj.getLimits( Idx );
             Xc = ( X - A ) ./ ( B - A );
         end % code
-
-        function export( obj )
-            %--------------------------------------------------------------
-            % Export the design to the ECOMO model configuration class
-            %
-            % obj = export();
-            %--------------------------------------------------------------
-            arguments
-                obj  (1,1)          { mustBeNonempty( obj ) }
-            end
-            if obj.ExportReady
-                notify( obj, 'DESIGN_AVAILABLE' );
-            else
-                warning( 'Design not generated!' );
-            end
-        end % export
         
         function D = applyConstraints( obj, Sz, P )
             %--------------------------------------------------------------
@@ -225,6 +230,9 @@ classdef DoEgeneratorECOMO < handle
             % Capture the relevant B-spline object
             %--------------------------------------------------------------
             B = obj.Bspline{ Name, "Object"};
+            if iscell( B )
+                B = B{ : };
+            end
             %--------------------------------------------------------------
             % Clip input range to the interval [B.a, B.b]
             %--------------------------------------------------------------
@@ -274,7 +282,7 @@ classdef DoEgeneratorECOMO < handle
             % obj = obj.clearDesign();
             %--------------------------------------------------------------
             obj.Design = [];
-            obj.Scramble = false;
+            obj.Scramble = true;
         end % clearDesign
 
         function obj = addFactor( obj, S, C )
@@ -386,7 +394,10 @@ classdef DoEgeneratorECOMO < handle
                     end
                     Kc = Des( :, Col );
                     B = obj.Bspline{ Name, "Object" };
-                    K = B.decode( Kc );
+                    if iscell( B )
+                        B = B{ : };
+                    end
+                    K = B.decodeKnots( Kc );
                     Out( :, Col ) = K;
                 else
                     %------------------------------------------------------
@@ -436,6 +447,7 @@ classdef DoEgeneratorECOMO < handle
             N = obj.NumFactors;
             D = cell( N, 2 );
             Finish = 0;
+            Name = string( obj.Factors.Properties.RowNames );
             for Q = 1:N
                 %----------------------------------------------------------
                 % Parse the column information
@@ -454,8 +466,7 @@ classdef DoEgeneratorECOMO < handle
                     %------------------------------------------------------
                     % Parse the distributed factor
                     %------------------------------------------------------
-                    Name = string( obj.Bspline.Properties.RowNames{ Q } );
-                    [ D( Q,: ), Finish ] = obj.parseDistributed( Name,...
+                    [ D( Q,: ), Finish ] = obj.parseDistributed( Name( Q ),...
                                                          Finish );
                 end
             end
@@ -506,13 +517,13 @@ classdef DoEgeneratorECOMO < handle
             %--------------------------------------------------------------
             % Initialise list of input variables
             %--------------------------------------------------------------
-            Xname = strings( N, 1 );
+            Xname = strings( N, 2 );
             %--------------------------------------------------------------
             % Parse the spline data and create the necessary Bspline
             % objects.
             %--------------------------------------------------------------
             if ( N > 0 )
-                B = bSplineTools.empty( N, 0 );                             % Create array of Bsplines
+                B = cell( N, 0 );
                 for Q = 1:N
                     %------------------------------------------------------
                     % Retrieve spline parameter structure
@@ -521,21 +532,39 @@ classdef DoEgeneratorECOMO < handle
                                                                "Spline") );
                     S = S.Spline;
                     %------------------------------------------------------
-                    % Form list of input variable names
+                    % Check for tensor product
                     %------------------------------------------------------
-                    Xname( Q, 1 ) = S.X;
-                    %------------------------------------------------------
-                    % Parse one-dimensional spline
-                    %------------------------------------------------------
-                    B( Q ) = obj.makeOneDimensionalSpline( S );
+                    Ok = obj.isTensor( S );
+                    if Ok
+                        %--------------------------------------------------
+                        % Process tensor product
+                        %--------------------------------------------------
+                        Xname( Q, : ) = [ S.X ];
+                        %--------------------------------------------------
+                        % Parse spline
+                        %--------------------------------------------------
+                        B{ Q } = obj.makeTwoDimensionalSpline( S );
+                    else
+                        %--------------------------------------------------
+                        % Form list of input variable names
+                        %--------------------------------------------------
+                        Xname( Q, 1 ) = S.X;
+                        %--------------------------------------------------
+                        % Parse spline
+                        %--------------------------------------------------
+                        B{ Q } = obj.makeOneDimensionalSpline( S );
+                    end
                 end
-                NumBasis = double( [B.nb].' );
-                NumKnots = double( [B.k].' );
+                [ NumBasis, NumKnots ] = obj.numSplinePars( B );
                 NumPar = NumBasis + NumKnots;
-                B = table( B( : ), NumBasis, NumKnots, NumPar, Xname );
+                Tensor = cellfun( @(B)isa( B, "tensorProductBspline" ),...
+                                  reshape( B, numel( B ), 1 ) );
+                B = table( B( : ), NumBasis, NumKnots, NumPar, Xname,...
+                                   Tensor );
                 B.Properties.RowNames = RowNames;
                 B.Properties.VariableNames = [ "Object", "NumBasis",...
-                                           "NumKnots", "NumPar", "Xname"];
+                                           "NumKnots", "NumPar", "Xname",... 
+                                           "Tensor" ];
                 %----------------------------------------------------------
                 % Parse derivative constraints if supplied
                 %----------------------------------------------------------
@@ -564,15 +593,23 @@ classdef DoEgeneratorECOMO < handle
             %                 Leave empty to specify all training
             %                 x-ordinates.
             %--------------------------------------------------------------
-            if isempty( C )
-                C = obj.getDefaultConstraints();
+            D = obj.getDefaultConstraints();
+            if ~isempty( C )
+                %----------------------------------------------------------
+                % Overwrite any default constraints
+                %----------------------------------------------------------
+                for Q = 1:numel( C )
+                    Idx = matches( [ D.name ], C( Q ).name );
+                    D( Idx ) = C( Q );
+                end % /Q
             end
-            Ok = all( obj.conFieldCheck( C ) );                         % Check necessary fields are present
-            assert( Ok, "Missing information for factor %s", C.name);   % Throw an error if there is missing information
-            %----------------------------------------------------------
+            C = D;
+            Ok = all( obj.conFieldCheck( C ) );                             % Check necessary fields are present
+            assert( Ok, "Missing information for factor %s", C.name);       % Throw an error if there is missing information
+            %--------------------------------------------------------------
             % Parse the constraint information. Allow for multiple
             % constraints being applicable to a given factor.
-            %----------------------------------------------------------
+            %--------------------------------------------------------------
             Names = string( obj.Factors.Properties.RowNames );
             Names = Names( obj.DistIdx );
             T = table( 'Size',  [ obj.NumDist, 2 ], ...
@@ -585,7 +622,8 @@ classdef DoEgeneratorECOMO < handle
                 % Add the constraint structure to the table
                 %----------------------------------------------------------
                 Idx = matches( Cnames, Names( Q ) );
-                Con = ~isempty( C( Idx ) );
+                Con = ~isempty( C( Idx ).derivative ) &...
+                    ~isempty( C( Idx ).type );
                 T( Names( Q ), : ) = cell2table( { { C( Idx ) }, Con });
             end %/Q
         end % parseBsplineConstraints
@@ -610,10 +648,15 @@ classdef DoEgeneratorECOMO < handle
             %--------------------------------------------------------------
             Ok = all( obj.fieldCheck( S ) );                                % Check necessary fields are present
             assert( Ok, "Missing information for factor %s", S.Name);       % Throw an error if there is missing information
-            T = struct2table( S );
+            if ( max( size( S ) ) == 1 )
+                % Scalar structure
+                T = struct2table( S, "AsArray", true );
+            else
+                T = struct2table( S );
+            end
             T.Properties.RowNames = string( T.Name );
             Idx = ~contains( T.Properties.VariableNames, "Name" );
-            T = T( :, obj.Expected( Idx ) );
+            T = T( :, Idx );
         end % parseFactor
 
         function Ok = conFieldCheck( obj, C )
@@ -796,11 +839,11 @@ classdef DoEgeneratorECOMO < handle
             % A     --> (double) Low limits
             % B     --> (double) Hi limits
             %--------------------------------------------------------------
-            A = obj.Factors.Lo( Idx );
+            A = obj.Factors.Lo( Idx, : );
             if iscell( A )
                 A = A{ : };
             end
-            B = obj.Factors.Hi( Idx );
+            B = obj.Factors.Hi( Idx, : );
             if iscell( B )
                 B = B{ : };
             end     
@@ -854,6 +897,87 @@ classdef DoEgeneratorECOMO < handle
             DK = DK( 2:end-1 );
             B = bSplineTools( S.M - 1 , DK, S.Xlo, S.Xhi );
         end % makeOneDimensionalSpline
+
+        function T = makeTwoDimensionalSpline( S )
+            %--------------------------------------------------------------
+            % Return a correctly configured two-dimensional  
+            % tensorProductBspline object
+            %
+            % B = obj.makeTwoDimensionalSpline( S );
+            %
+            % Input Arguments:
+            %
+            % S     --> (struct) B-spline configuration structure with
+            %                    fields:
+            %
+            %                    X   - (string) Input factor name(s)
+            %                    M   - (int8) Spline order
+            %                    K   - (cell) Number of knots
+            %                    Xlo - (double) Low limit(s) for 
+            %                          x-factor(s) range
+            %                    Xhi - (double) High limit(s) for 
+            %                          x-factor(s) range
+            %--------------------------------------------------------------
+            T = tensorProductBspline( S.M, S.K );
+            T = T.setBounds( S.Xlo, S.Xhi );                                % Automatically return equispaced knots
+            T = T.setKnotBounds( S.Klo, S.Khi );
+            T = T.setEquiSpacedKnots();
+        end % makeTwoDimensionalSpline
+
+        function Ok = isTensor( S )
+            %--------------------------------------------------------------
+            % Return true if a tensor product spline
+            %
+            % Ok = obj.isTensor( S );
+            % Input Arguments:
+            %
+            % S     --> (struct) B-spline configuration structure with
+            %                    fields:
+            %
+            %                    X   - (string) Input factor name(s)
+            %                    M   - (int8) Spline 
+            %                    K   - (cell)
+            %                    Xlo - (double) Low limit(s) for 
+            %                          x-factor(s) range
+            %                    Xhi - (double) High limit(s) for 
+            %                          x-factor(s) range
+            %--------------------------------------------------------------
+            T = rmfield( S, "X" );
+            Ok = structfun( @numel, T );
+            Ok = all( Ok > 1 );
+        end %isTensor
+
+        function [ NumBasis, NumKnots ] = numSplinePars( B )
+            %--------------------------------------------------------------
+            % Return summary array of spline parameters
+            % 
+            % [ NumBasis, NumKnots ] = obj.numSplinePars( B );
+            %
+            % Input Arguments:
+            %
+            % B --> (cell) array of bSplineTools or tensorProductBspline
+            %       objects.
+            %
+            % Output Arguments:
+            %
+            % NumBasis --> (double) vector of number of basis functions
+            % NumKnots --> (double) vector of number of knots
+            %--------------------------------------------------------------
+            [ NumBasis, NumKnots ] = deal( zeros( size( B ) ) );
+            N = numel( B );
+            for Q = 1:N
+                SplineObj = B{ Q };
+                if isa( SplineObj,"bSplineTools" )
+                    NumBasis( Q ) = SplineObj.nb;
+                    NumKnots( Q ) = SplineObj.k;
+                else
+                    NumBasis( Q ) = SplineObj.NumBas;
+                    NumKnots( Q ) = sum( SplineObj.K );
+                end
+            end % /Q
+            NumBasis = NumBasis( : );
+            NumKnots = NumKnots( : );
+        end % numSplinePars
     end % static and protected methods
 
     methods

@@ -5,8 +5,8 @@ classdef SobolSequence < DoEgeneratorECOMO
     % Optimisation.
     %----------------------------------------------------------------------
     properties ( SetAccess = protected )
-        Leap        (1,1) double    = max( primes( 7301 ) )
-        Skip        (1,1) double    = max( primes( 49 ) )
+        Leap        (1,1) double    = max( primes( 49 ) )
+        Skip        (1,1) double    = max( primes( 7301 ) )
     end % protected methods
 
     methods
@@ -43,6 +43,8 @@ classdef SobolSequence < DoEgeneratorECOMO
             %                            x-factor(s) range
             %                      Xhi - (double) High limit(s) for 
             %                            x-factor(s) range
+            %                      Klo - (double) lower bounds for knots
+            %                      Khi - (double) upper bounds for knots
             % Con   --> (struct) Structure defining constraint properties
             %                    with fields
             %
@@ -111,7 +113,8 @@ classdef SobolSequence < DoEgeneratorECOMO
             %--------------------------------------------------------------
             obj.Leap = Opts.Leap;
             obj.Skip = Opts.Skip;
-            P = sobolset( D, "Leap", obj.Leap, "Skip", obj.Skip );
+            P = sobolset( D + 1, "Leap", obj.Leap, "Skip", obj.Skip,...
+                          "PointOrder", "graycode" );
             if Opts.Scramble
                 %----------------------------------------------------------
                 % Scramble the design
@@ -119,6 +122,10 @@ classdef SobolSequence < DoEgeneratorECOMO
                 P = scramble( P, 'MatousekAffineOwen' );
                 obj.Scramble = true;
             end 
+            %--------------------------------------------------------------
+            % Set initial size of experiment
+            %--------------------------------------------------------------
+            obj.InitialSize = N;
             %--------------------------------------------------------------
             % Apply constraints if defined
             %--------------------------------------------------------------
@@ -131,8 +138,9 @@ classdef SobolSequence < DoEgeneratorECOMO
                 obj.NumPoints_ = size( Des, 1 );
             else
                 obj.NumPoints_ = N;
-                Des = net( P, obj.NumPoints );
+                Des = net( P, double( obj.NumPoints ) );
             end
+            Des = Des( :, 2:end );
             obj.NumColDes_ = D;
             %--------------------------------------------------------------
             % Decode the design
@@ -172,6 +180,9 @@ classdef SobolSequence < DoEgeneratorECOMO
             % Fetch the B-spline object
             %--------------------------------------------------------------
             B = obj.Bspline{ Name, "Object" };
+            if iscell( B )
+                B = B{ : };
+            end
             %--------------------------------------------------------------
             % Create the evaluation vector (spline input)
             %--------------------------------------------------------------
