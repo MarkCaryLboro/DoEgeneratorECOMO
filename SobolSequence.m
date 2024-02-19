@@ -43,6 +43,8 @@ classdef SobolSequence < DoEgeneratorECOMO
             %                            x-factor(s) range
             %                      Xhi - (double) High limit(s) for 
             %                            x-factor(s) range
+            %                      Klo - (double) lower bounds for knots
+            %                      Khi - (double) upper bounds for knots
             % Con   --> (struct) Structure defining constraint properties
             %                    with fields
             %

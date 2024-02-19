@@ -3,12 +3,6 @@ classdef DoEhook < handle
     % A class to generate configuration data required to run the ECOMO
     % model. 
     %----------------------------------------------------------------------
-
-    properties ( SetAccess = protected, Transient )
-        Lh          (1,1)                                                   % Listener handle for DESIGN_AVAILABLE event
-        Uh          (1,1)                                                   % Listener handle for UPDATE event
-    end 
-
     properties ( SetAccess = protected)
         ParTable    (:,:) table                                             % Parameter table in engineering units
         TubeLength  (1,1) double                                            % Length of the tube [mm]

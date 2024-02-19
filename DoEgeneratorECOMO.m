@@ -282,7 +282,7 @@ classdef DoEgeneratorECOMO < handle
             % obj = obj.clearDesign();
             %--------------------------------------------------------------
             obj.Design = [];
-            obj.Scramble = false;
+            obj.Scramble = true;
         end % clearDesign
 
         function obj = addFactor( obj, S, C )
@@ -656,7 +656,7 @@ classdef DoEgeneratorECOMO < handle
             end
             T.Properties.RowNames = string( T.Name );
             Idx = ~contains( T.Properties.VariableNames, "Name" );
-            T = T( :, obj.Expected( Idx ) );
+            T = T( :, Idx );
         end % parseFactor
 
         function Ok = conFieldCheck( obj, C )
@@ -920,6 +920,8 @@ classdef DoEgeneratorECOMO < handle
             %--------------------------------------------------------------
             T = tensorProductBspline( S.M, S.K );
             T = T.setBounds( S.Xlo, S.Xhi );                                % Automatically return equispaced knots
+            T = T.setKnotBounds( S.Klo, S.Khi );
+            T = T.setEquiSpacedKnots();
         end % makeTwoDimensionalSpline
 
         function Ok = isTensor( S )
