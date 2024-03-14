@@ -113,19 +113,13 @@ classdef SobolSequence < DoEgeneratorECOMO
             %--------------------------------------------------------------
             obj.Leap = Opts.Leap;
             obj.Skip = Opts.Skip;
-            P = sobolset( D + 1, "Leap", obj.Leap, "Skip", obj.Skip,...
-                          "PointOrder", "graycode" );
-            if Opts.Scramble
-                %----------------------------------------------------------
-                % Scramble the design
-                %----------------------------------------------------------
-                P = scramble( P, 'MatousekAffineOwen' );
-                obj.Scramble = true;
-            end 
+            obj.Scramble = Opts.Scramble;
             %--------------------------------------------------------------
             % Set initial size of experiment
             %--------------------------------------------------------------
             obj.InitialSize = N;
+            obj.NumPoints_ = N;
+            obj.NumColDes_ = D;
             %--------------------------------------------------------------
             % Apply constraints if defined
             %--------------------------------------------------------------
@@ -134,14 +128,13 @@ classdef SobolSequence < DoEgeneratorECOMO
                 % Identify feasible combinations for the distributed
                 % factors
                 %----------------------------------------------------------
-                Des = obj.applyConstraints( N, P );                         % Retain only feasible combinations 
-                obj.NumPoints_ = size( Des, 1 );
+                Des = obj.applyConstraints( N, D );                         % Retain only feasible combinations 
             else
-                obj.NumPoints_ = N;
-                Des = net( P, double( obj.NumPoints ) );
+                %----------------------------------------------------------
+                % Unconstrained design
+                %----------------------------------------------------------
+                Des = obj.makeDesign( D );
             end
-            Des = Des( :, 2:end );
-            obj.NumColDes_ = D;
             %--------------------------------------------------------------
             % Decode the design
             %--------------------------------------------------------------
@@ -263,5 +256,45 @@ classdef SobolSequence < DoEgeneratorECOMO
             V = V( 1:Sz, : );
             delete( W );
         end % evalSplineConstraint
+
+        function Des = makeDesign( obj, D )
+            %--------------------------------------------------------------
+            % Make an unconstrained Sobol sequence
+            %
+            % Des = obj.makeSobolNet( D);
+            %
+            % Input Arguments:
+            %
+            % D --> Number of factors
+            %--------------------------------------------------------------
+            P = obj.makeSobolNet( D );
+            Des = net( P, double( obj.NumPoints ) );
+            Rng = range( Des );
+            [ ~, Idx ] = sort( Rng, "descend" );
+            Des = Des( :, Idx( 1:D ) );
+        end
+
+        function P = makeSobolNet( obj, D )
+            %--------------------------------------------------------------
+            % Generate a Sobol net object. Gray coding is hard coded.
+            %
+            % P = obj.makeSobolNet( D );
+            %
+            % Input Arguments:
+            %
+            % D --> Number of factors
+            %--------------------------------------------------------------
+            P = sobolset( 2 * D, "Leap", obj.Leap, "Skip", obj.Skip,...
+                "PointOrder", "graycode" );
+            if obj.Scramble
+                %----------------------------------------------------------
+                % Scramble the design
+                %----------------------------------------------------------
+                P = scramble( P, 'MatousekAffineOwen' );
+            end 
+        end % makeSobolNet
     end % ordinary methods
+
+    methods ( Access = private )
+    end % private methods
 end % SobolSequence

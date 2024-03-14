@@ -144,28 +144,32 @@ classdef DoEgeneratorECOMO < handle
             Xc = ( X - A ) ./ ( B - A );
         end % code
         
-        function D = applyConstraints( obj, Sz, P )
+        function D = applyConstraints( obj, Sz, Nfact )
             %--------------------------------------------------------------
             % Apply derivative constraints to the distributed parameter.
             % Spline evaluations outside the defined range are removed
             % from the experiment.
             % 
-            % D = obj.applyConstraints( Sz, P );
+            % D = obj.applyConstraints( Sz, Nfact );
             %
             % Input Arguments
             %
-            % Sz  --> Desired size of design
-            % P   --> Sobol set object
+            % Sz        --> Desired size of design
+            % Nfact     --> Number of design factors
             %--------------------------------------------------------------
             arguments
-                obj (1,1)                   { mustBeNonempty( obj ) }
-                Sz  (1,1)  double
-                P   (:,:)  sobolset                           
+                obj    (1,1)                   { mustBeNonempty( obj ) }
+                Sz     (1,1)  double           { mustBeNonempty( Sz ) }
+                Nfact  (:,:)  int8                           
             end
             %--------------------------------------------------------------
             % Generate an unconstrained design to begin with
             %--------------------------------------------------------------
-            D = net( P, Sz );
+            P = obj.makeSobolNet( 2 * Nfact );
+            D = net( P, double( obj.NumPoints ) );
+            Rng = range( D );
+            [ ~, Idx ] = sort( Rng, "descend" );
+            D = D( :, Idx( 1:Nfact ) );
             %--------------------------------------------------------------
             % Point to the constrained parameters
             %--------------------------------------------------------------
@@ -397,6 +401,9 @@ classdef DoEgeneratorECOMO < handle
                     if iscell( B )
                         B = B{ : };
                     end
+                    %------------------------------------------------------
+                    % Set the limits for the knots
+                    %------------------------------------------------------
                     K = B.decodeKnots( Kc );
                     Out( :, Col ) = K;
                 else
@@ -893,9 +900,11 @@ classdef DoEgeneratorECOMO < handle
             %                    Xhi - (double) High limit(s) for 
             %                          x-factor(s) range
             %--------------------------------------------------------------
-            DK = linspace( S.Xlo, S.Xhi, S.K + 2 ).';
+            DK = linspace( S.Klo, S.Khi, S.K + 2 ).';
             DK = DK( 2:end-1 );
             B = bSplineTools( S.M - 1 , DK, S.Xlo, S.Xhi );
+            B.ka = S.Klo;
+            B.kb = S.Khi;
         end % makeOneDimensionalSpline
 
         function T = makeTwoDimensionalSpline( S )
