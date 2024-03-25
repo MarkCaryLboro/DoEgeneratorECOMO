@@ -99,7 +99,7 @@ classdef SobolSequence < DoEgeneratorECOMO
                 N             (1,1)   int64        { mustBePositive( N ) } = 101
                 Opts.Leap     (1,1)   double       = obj.Leap
                 Opts.Skip     (1,1)   double       = obj.Skip
-                Opts.Scramble (1,1)   logical      = false
+                Opts.Scramble (1,1)   logical      = true
             end
             obj = obj.clearDesign();
             %--------------------------------------------------------------
